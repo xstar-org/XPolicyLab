@@ -13,14 +13,14 @@ def eval_one_episode(TASK_ENV, model_client):
             if TASK_ENV.is_episode_end() or action_idx + 1 == len(actions):
                 break
 
-            obs = TASK_ENV.get_obs()
-            model_client.call(func_name="update_obs", obs=obs)
+            # The current action chunk is already fixed. The next outer iteration
+            # captures the post-chunk observation before requesting another chunk.
 
 def eval_one_episode_batch(TASK_ENV, model_client):
 
     model_client.call(func_name="reset")
 
-    while not TASK_ENV.is_episode_end(): # Check whether the episode ends
+    while True:
         env_idx_list = TASK_ENV.get_running_env_idx_list() # Get Running Environment Index List
         obs_list = TASK_ENV.get_obs_batch(env_idx_list) # Get Observation
         model_client.call(func_name="update_obs_batch", obs=obs_list)
@@ -29,9 +29,14 @@ def eval_one_episode_batch(TASK_ENV, model_client):
         chunk_size = len(actions[0]) # Get the chunk size
         for action_idx in range(chunk_size): # Iterate over the action chunk
             current_action_list = [env_actions[action_idx] for env_actions in actions] # Get the current action list
-            TASK_ENV.take_action_batch(current_action_list, env_idx_list) # Take the action
+            episode_end = TASK_ENV.take_action_batch(current_action_list, env_idx_list) # Take the action
 
-            if TASK_ENV.is_episode_end() or action_idx + 1 == chunk_size: # Check whether the episode ends
+            # Newer EvalEnv implementations return the end state they already
+            # computed inside take_action_batch().  Keep a fallback for older
+            # environment clients that still return None.
+            if episode_end is None:
+                episode_end = TASK_ENV.is_episode_end()
+            if episode_end or action_idx + 1 == chunk_size: # Check whether the episode ends
                 break
 
             running = set(TASK_ENV.get_running_env_idx_list()) # Get the running environment index list
@@ -39,4 +44,8 @@ def eval_one_episode_batch(TASK_ENV, model_client):
 
             actions = [actions[i] for i in active_batch_idx] # Get the active action list
             env_idx_list = [env_idx_list[i] for i in active_batch_idx] # Get the active environment index list
-            model_client.call(func_name="update_obs_batch", obs=TASK_ENV.get_obs_batch(env_idx_list)) # Update the observation
+            # Keep filtering completed environments, but defer observation capture
+            # until the next outer iteration, immediately before the next inference.
+
+        if episode_end:
+            break
