@@ -1,11 +1,9 @@
+import os
 from pathlib import Path
 from typing import Any
+import cv2
 import numpy as np
 from XPolicyLab.model_template import ModelTemplate
-from XPolicyLab.utils.checkpoint_resolver import resolve_checkpoint_root
-from XPolicyLab.utils.process_data import (
-    get_robot_action_dim_info, pack_robot_state, unpack_robot_state,
-)
 
 POLICY_DIR = Path(__file__).resolve().parent
 
@@ -16,13 +14,16 @@ def _is_none_like(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() in {"", "none", "null"}
 
 
-def _standardize_rgb(image: np.ndarray) -> np.ndarray:
-    """The server provides decoded RGB; retain native camera sizes for VPP2."""
+def _standardize_rgb(image: np.ndarray, *, resize: bool = True) -> np.ndarray:
     image = np.asarray(image)
     if image.ndim != 3 or image.shape[-1] != 3:
         raise ValueError(f"Expected HWC image with 3 channels, got {image.shape}")
     if image.dtype != np.uint8:
         image = np.clip(image, 0, 255).astype(np.uint8)
+    if resize and image.shape[:2] != (240, 320):
+        image = cv2.resize(image, (320, 240), interpolation=cv2.INTER_AREA)
+    if resize and image.shape != (240, 320, 3):
+        raise ValueError(f"Expected standardized RGB shape (240, 320, 3), got {image.shape}")
     return image
 
 
@@ -42,36 +43,6 @@ def _get_instruction(obs: dict, fallback: str) -> str:
 
 class Model(ModelTemplate):
     def __init__(self, model_cfg):
-        model_cfg = dict(model_cfg)
-        if _is_none_like(model_cfg.get("ckpt_name")):
-            model_cfg["ckpt_name"] = "joint2b_s100000"
-        cleaned = {key: value for key, value in model_cfg.items() if not _is_none_like(value)}
-        bundle = resolve_checkpoint_root(
-            cleaned, POLICY_DIR / "checkpoints", policy_dir=POLICY_DIR,
-            explicit_keys=("checkpoint_path", "ckpt_setting"),
-        )
-        if bundle.is_file():
-            model_cfg["checkpoint_path"] = str(bundle)
-            bundle = bundle.parent
-        elif not _is_none_like(model_cfg.get("checkpoint_path")):
-            path = Path(model_cfg["checkpoint_path"]).expanduser()
-            path = path if path.is_absolute() else POLICY_DIR / path
-            if path.is_dir():
-                model_cfg["checkpoint_path"] = str(path / "action.pt")
-        defaults = {
-            "checkpoint_path": bundle / "action.pt",
-            "video_checkpoint_path": bundle / "video.pt",
-            "dataset_stats_path": bundle / "dataset_stats.json",
-            "wan_model_dir": POLICY_DIR / "checkpoints/Wan2.1-I2V-14B-480P",
-        }
-        for key, value in defaults.items():
-            if _is_none_like(model_cfg.get(key)):
-                model_cfg[key] = str(value)
-            path = Path(model_cfg[key]).expanduser()
-            model_cfg[key] = str((POLICY_DIR / path).resolve() if not path.is_absolute() else path)
-        for key, expected in (("history_stride", 25), ("video_seed_offset", 1000003), ("action_horizon", 32)):
-            if int(model_cfg.get(key, expected)) != expected:
-                raise ValueError(f"This release requires {key}={expected}")
         self.model_cfg = dict(model_cfg)
         self.action_type = self.model_cfg["action_type"]
         if (
@@ -90,18 +61,16 @@ class Model(ModelTemplate):
         self.deployment_adapter = (
             str(self.model_cfg.get("deployment_adapter") or "robodojo_ee16").strip().lower()
         )
-        if self.env_cfg_type != "arx_x5" or self.model_cfg.get("eval_batch", False):
-            raise ValueError("This release supports arx_x5 with eval_batch=false")
-        self.robot_action_dim_info = get_robot_action_dim_info(self.env_cfg_type)
-        if (len(self.robot_action_dim_info["arm_dim"]) != 2
-                or self.robot_action_dim_info["ee_dim"] != [1, 1]):
-            raise ValueError("The checkpoint requires two arms with one gripper value each")
-        # The shared packer interprets arm_dim literally, also for action_type=ee.
-        # Robot metadata stores joint DOFs; XPolicyLab's EE schema is xyz + wxyz.
-        self.pose_dim_info = dict(
-            self.robot_action_dim_info,
-            arm_dim=[7 for _ in self.robot_action_dim_info["arm_dim"]],
-        )
+        if (
+            "robodojo_ee16" in {"robodojo_ee16", "robodojo_delta_eef14"}
+            and self.action_type != "ee"
+        ):
+            raise ValueError(f"{'robodojo_ee16'} requires action_type='ee'.")
+        if (
+            "robodojo_ee16" in {"robodojo_joint14", "robodojo_delta_joint14"}
+            and self.action_type != "joint"
+        ):
+            raise ValueError(f"{'robodojo_ee16'} requires action_type='joint'.")
         self.last_obs = None
         self.last_instruction = self.default_instruction
         self.model = None
@@ -120,6 +89,8 @@ class Model(ModelTemplate):
         self._last_instruction_by_client = {}
         self._last_virtual_by_client = {}
         self._infer_count_by_virtual = {}
+        self._last_obs_by_virtual = {}
+        self._last_instruction_by_virtual = {}
         checkpoint_path = self.model_cfg.get("checkpoint_path") or self.model_cfg.get(
             "ckpt_setting"
         )
@@ -139,32 +110,57 @@ class Model(ModelTemplate):
         self.action_horizon = int(self.model.action_horizon)
         self.replan_steps = int(self.model.replan_steps)
 
-    def _pack_robodojo_ee16_state(self, obs: dict) -> np.ndarray:
-        return np.asarray(pack_robot_state(
-            obs, self.action_type, self.pose_dim_info,
-        ), dtype=np.float32)
+    @staticmethod
+    def _pack_robodojo_ee16_state(obs: dict) -> np.ndarray:
+        state = obs["state"]
+        parts = []
+        for side in ("left", "right"):
+            pose = np.asarray(state[f"{side}_ee_pose"], dtype=np.float32).reshape(7)
+            gripper = np.asarray(state[f"{side}_ee_joint_state"], dtype=np.float32).reshape(1)
+            parts.extend((pose, gripper))
+        packed = np.concatenate(parts, axis=0)
+        if packed.shape != (16,):
+            raise ValueError(f"Expected RoboDojo EE state [16], got {packed.shape}")
+        return packed
 
-    def _unpack_robodojo_ee16_actions(self, actions: np.ndarray):
+    @staticmethod
+    def _unpack_robodojo_ee16_actions(actions: np.ndarray):
         packed = np.asarray(actions, dtype=np.float32)
         if packed.ndim == 1:
             packed = packed[None, :]
-        if packed.ndim != 2:
-            raise ValueError(f"Expected action matrix, got {packed.shape}")
-        return unpack_robot_state(packed, self.action_type, self.pose_dim_info)
+        if packed.ndim != 2 or packed.shape[1] != 16:
+            raise ValueError(f"Expected RoboDojo EE actions [T,16], got {packed.shape}")
+        result = []
+        for action in packed:
+            result.append(
+                {
+                    "left_ee_pose": action[0:7],
+                    "left_ee_joint_state": action[7:8],
+                    "right_ee_pose": action[8:15],
+                    "right_ee_joint_state": action[15:16],
+                }
+            )
+        return result
 
     def _encode_observation(self, obs: dict) -> dict:
         vision = obs["vision"]
+        preserve_native_views = "robodojo_ee16" in {
+            "robodojo_ee16",
+            "robodojo_delta_eef14",
+            "robodojo_joint14",
+            "robodojo_delta_joint14",
+        }
         adapted = {
             "env_idx": self._virtual_env_idx(int(obs.get("env_idx", 0))),
             "observation": {
                 "head_camera": {
-                    "rgb": _standardize_rgb(vision["cam_head"]["color"])
+                    "rgb": _standardize_rgb(vision["cam_head"]["color"], resize=not True)
                 },
                 "left_camera": {
-                    "rgb": _standardize_rgb(vision["cam_left_wrist"]["color"])
+                    "rgb": _standardize_rgb(vision["cam_left_wrist"]["color"], resize=not True)
                 },
                 "right_camera": {
-                    "rgb": _standardize_rgb(vision["cam_right_wrist"]["color"])
+                    "rgb": _standardize_rgb(vision["cam_right_wrist"]["color"], resize=not True)
                 },
             },
             "joint_action": {"vector": self._pack_robodojo_ee16_state(obs)},
@@ -190,6 +186,8 @@ class Model(ModelTemplate):
     def _forget_virtual(self, virtual: int) -> None:
         self._last_infer_step.pop(virtual, None)
         self._infer_count_by_virtual.pop(virtual, None)
+        self._last_obs_by_virtual.pop(virtual, None)
+        self._last_instruction_by_virtual.pop(virtual, None)
         if self.model is not None and hasattr(self.model, "reset_env"):
             self.model.reset_env(virtual)
 
@@ -235,6 +233,32 @@ class Model(ModelTemplate):
         self._last_obs_by_client[client] = self.last_obs
         self._last_instruction_by_client[client] = self.last_instruction
         self._last_virtual_by_client[client] = encoded["env_idx"]
+        self._last_obs_by_virtual[encoded["env_idx"]] = self.last_obs
+        self._last_instruction_by_virtual[encoded["env_idx"]] = self.last_instruction
+
+    def _observe_at_native_step(self, encoded, raw_obs) -> None:
+        """Record an observation at its real simulator step.
+
+        Sparse capture skips frames which can never be selected by VPP2 history.
+        Upstream ``observe`` normally counts calls, so rewrite the just-appended
+        history entry to the explicit native step supplied by the simulator.
+        """
+        self._remember(encoded, raw_obs)
+        model = self.model
+        if model is None or not hasattr(model, "observe"):
+            return
+        model.observe(encoded)
+        native_step = raw_obs.get("_vpp2_native_step")
+        if native_step is None:
+            return
+        env_idx = int(encoded["env_idx"])
+        history = getattr(model, "_history_by_env", {}).get(env_idx)
+        if not history:
+            return
+        _, frame = history.pop()
+        native_step = int(native_step)
+        history.append((native_step, frame))
+        model._history_step_by_env[env_idx] = native_step
 
     def update_obs(self, obs):
         self._bind_client(obs)
@@ -261,14 +285,14 @@ class Model(ModelTemplate):
                 if not isinstance(history_obs, dict):
                     continue
                 encoded = self._encode_observation(history_obs)
-                self._remember(encoded, history_obs)
-                if self.model is not None and hasattr(self.model, "observe"):
-                    self.model.observe(encoded)
+                self._observe_at_native_step(encoded, history_obs)
             return
         encoded = self._encode_observation(obs)
-        self._remember(encoded, obs)
-        if self.model is not None and hasattr(self.model, "observe"):
-            self.model.observe(encoded)
+        self._observe_at_native_step(encoded, obs)
+
+    def update_obs_batch(self, obs_list):
+        for obs in obs_list:
+            self.update_obs(obs)
 
     def _check_history_alignment(self, virtual: int) -> None:
         """Before the k-th inference of an episode exactly replan_steps*k
@@ -301,18 +325,31 @@ class Model(ModelTemplate):
     def get_action(self, obs=None):
         self._bind_client(obs)
         client = self._client_key()
-        last_obs = self._last_obs_by_client.get(client)
-        instruction = self._last_instruction_by_client.get(client, self.default_instruction)
+        last_obs = self._last_obs_by_client.get(client, self.last_obs)
+        instruction = self._last_instruction_by_client.get(client, self.last_instruction)
         virtual = self._last_virtual_by_client.get(client)
         if virtual is not None:
             self._check_history_alignment(virtual)
         return self._infer_actions(last_obs, instruction)
 
-    def update_obs_batch(self, obs_list):
-        raise NotImplementedError("Use eval_batch=false; vectorized environments are not supported")
-
-    def get_action_batch(self, env_idx_list=None):
-        raise NotImplementedError("Use eval_batch=false; vectorized environments are not supported")
+    def get_action_batch(self, obs=None):
+        if isinstance(obs, dict):
+            self._bind_client(obs)
+            env_idx_list = obs.get("env_idx_list") or []
+        else:
+            env_idx_list = obs or []
+        actions = []
+        for env_idx in env_idx_list:
+            virtual = self._virtual_env_idx(int(env_idx))
+            last_obs = self._last_obs_by_virtual.get(virtual)
+            if last_obs is None:
+                raise RuntimeError(f"No VPP2 observation recorded for env {env_idx}.")
+            instruction = self._last_instruction_by_virtual.get(
+                virtual, self.default_instruction
+            )
+            self._check_history_alignment(virtual)
+            actions.append(self._infer_actions(last_obs, instruction))
+        return actions
 
     def _reset_client_state(self, client) -> None:
         for key in [k for k in self._virtual_env_ids if k[0] == client]:
@@ -345,6 +382,8 @@ class Model(ModelTemplate):
         self._virtual_env_ids.clear()
         self._last_infer_step.clear()
         self._infer_count_by_virtual.clear()
+        self._last_obs_by_virtual.clear()
+        self._last_instruction_by_virtual.clear()
         self._last_obs_by_client.clear()
         self._last_instruction_by_client.clear()
         self._last_virtual_by_client.clear()
