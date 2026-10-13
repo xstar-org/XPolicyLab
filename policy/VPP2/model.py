@@ -1,9 +1,11 @@
-import os
 from pathlib import Path
 from typing import Any
-import cv2
 import numpy as np
 from XPolicyLab.model_template import ModelTemplate
+from XPolicyLab.utils.checkpoint_resolver import resolve_checkpoint_root
+from XPolicyLab.utils.process_data import (
+    get_robot_action_dim_info, pack_robot_state, unpack_robot_state,
+)
 
 POLICY_DIR = Path(__file__).resolve().parent
 
@@ -14,16 +16,13 @@ def _is_none_like(value: Any) -> bool:
     return isinstance(value, str) and value.strip().lower() in {"", "none", "null"}
 
 
-def _standardize_rgb(image: np.ndarray, *, resize: bool = True) -> np.ndarray:
+def _standardize_rgb(image: np.ndarray) -> np.ndarray:
+    """The server provides decoded RGB; retain native camera sizes for VPP2."""
     image = np.asarray(image)
     if image.ndim != 3 or image.shape[-1] != 3:
         raise ValueError(f"Expected HWC image with 3 channels, got {image.shape}")
     if image.dtype != np.uint8:
         image = np.clip(image, 0, 255).astype(np.uint8)
-    if resize and image.shape[:2] != (240, 320):
-        image = cv2.resize(image, (320, 240), interpolation=cv2.INTER_AREA)
-    if resize and image.shape != (240, 320, 3):
-        raise ValueError(f"Expected standardized RGB shape (240, 320, 3), got {image.shape}")
     return image
 
 
@@ -43,6 +42,40 @@ def _get_instruction(obs: dict, fallback: str) -> str:
 
 class Model(ModelTemplate):
     def __init__(self, model_cfg):
+        model_cfg = dict(model_cfg)
+        if _is_none_like(model_cfg.get("ckpt_name")):
+            model_cfg["ckpt_name"] = "joint2b_s100000"
+        cleaned = {key: value for key, value in model_cfg.items() if not _is_none_like(value)}
+        bundle = resolve_checkpoint_root(
+            cleaned, POLICY_DIR / "checkpoints", policy_dir=POLICY_DIR,
+            explicit_keys=("checkpoint_path", "ckpt_setting"),
+        )
+        if bundle.is_file():
+            model_cfg["checkpoint_path"] = str(bundle)
+            bundle = bundle.parent
+        elif not _is_none_like(model_cfg.get("checkpoint_path")):
+            path = Path(model_cfg["checkpoint_path"]).expanduser()
+            path = path if path.is_absolute() else POLICY_DIR / path
+            if path.is_dir():
+                model_cfg["checkpoint_path"] = str(path / "action.pt")
+        defaults = {
+            "checkpoint_path": bundle / "action.pt",
+            "video_checkpoint_path": bundle / "video.pt",
+            "dataset_stats_path": bundle / "dataset_stats.json",
+            "wan_model_dir": POLICY_DIR / "checkpoints/Wan2.1-I2V-14B-480P",
+        }
+        for key, value in defaults.items():
+            if _is_none_like(model_cfg.get(key)):
+                model_cfg[key] = str(value)
+            path = Path(model_cfg[key]).expanduser()
+            model_cfg[key] = str((POLICY_DIR / path).resolve() if not path.is_absolute() else path)
+        for key, expected in (
+            ("history_stride", 25),
+            ("video_seed_offset", 1000003),
+            ("action_horizon", 32),
+        ):
+            if int(model_cfg.get(key, expected)) != expected:
+                raise ValueError(f"This release requires {key}={expected}")
         self.model_cfg = dict(model_cfg)
         self.action_type = self.model_cfg["action_type"]
         if (
@@ -61,16 +94,18 @@ class Model(ModelTemplate):
         self.deployment_adapter = (
             str(self.model_cfg.get("deployment_adapter") or "robodojo_ee16").strip().lower()
         )
-        if (
-            "robodojo_ee16" in {"robodojo_ee16", "robodojo_delta_eef14"}
-            and self.action_type != "ee"
-        ):
-            raise ValueError(f"{'robodojo_ee16'} requires action_type='ee'.")
-        if (
-            "robodojo_ee16" in {"robodojo_joint14", "robodojo_delta_joint14"}
-            and self.action_type != "joint"
-        ):
-            raise ValueError(f"{'robodojo_ee16'} requires action_type='joint'.")
+        if self.env_cfg_type != "arx_x5":
+            raise ValueError("This release supports arx_x5 only")
+        self.robot_action_dim_info = get_robot_action_dim_info(self.env_cfg_type)
+        if (len(self.robot_action_dim_info["arm_dim"]) != 2
+                or self.robot_action_dim_info["ee_dim"] != [1, 1]):
+            raise ValueError("The checkpoint requires two arms with one gripper value each")
+        # The shared packer interprets arm_dim literally, also for action_type=ee.
+        # Robot metadata stores joint DOFs; XPolicyLab's EE schema is xyz + wxyz.
+        self.pose_dim_info = dict(
+            self.robot_action_dim_info,
+            arm_dim=[7 for _ in self.robot_action_dim_info["arm_dim"]],
+        )
         self.last_obs = None
         self.last_instruction = self.default_instruction
         self.model = None
@@ -110,57 +145,32 @@ class Model(ModelTemplate):
         self.action_horizon = int(self.model.action_horizon)
         self.replan_steps = int(self.model.replan_steps)
 
-    @staticmethod
-    def _pack_robodojo_ee16_state(obs: dict) -> np.ndarray:
-        state = obs["state"]
-        parts = []
-        for side in ("left", "right"):
-            pose = np.asarray(state[f"{side}_ee_pose"], dtype=np.float32).reshape(7)
-            gripper = np.asarray(state[f"{side}_ee_joint_state"], dtype=np.float32).reshape(1)
-            parts.extend((pose, gripper))
-        packed = np.concatenate(parts, axis=0)
-        if packed.shape != (16,):
-            raise ValueError(f"Expected RoboDojo EE state [16], got {packed.shape}")
-        return packed
+    def _pack_robodojo_ee16_state(self, obs: dict) -> np.ndarray:
+        return np.asarray(pack_robot_state(
+            obs, self.action_type, self.pose_dim_info,
+        ), dtype=np.float32)
 
-    @staticmethod
-    def _unpack_robodojo_ee16_actions(actions: np.ndarray):
+    def _unpack_robodojo_ee16_actions(self, actions: np.ndarray):
         packed = np.asarray(actions, dtype=np.float32)
         if packed.ndim == 1:
             packed = packed[None, :]
-        if packed.ndim != 2 or packed.shape[1] != 16:
-            raise ValueError(f"Expected RoboDojo EE actions [T,16], got {packed.shape}")
-        result = []
-        for action in packed:
-            result.append(
-                {
-                    "left_ee_pose": action[0:7],
-                    "left_ee_joint_state": action[7:8],
-                    "right_ee_pose": action[8:15],
-                    "right_ee_joint_state": action[15:16],
-                }
-            )
-        return result
+        if packed.ndim != 2:
+            raise ValueError(f"Expected action matrix, got {packed.shape}")
+        return unpack_robot_state(packed, self.action_type, self.pose_dim_info)
 
     def _encode_observation(self, obs: dict) -> dict:
         vision = obs["vision"]
-        preserve_native_views = "robodojo_ee16" in {
-            "robodojo_ee16",
-            "robodojo_delta_eef14",
-            "robodojo_joint14",
-            "robodojo_delta_joint14",
-        }
         adapted = {
             "env_idx": self._virtual_env_idx(int(obs.get("env_idx", 0))),
             "observation": {
                 "head_camera": {
-                    "rgb": _standardize_rgb(vision["cam_head"]["color"], resize=not True)
+                    "rgb": _standardize_rgb(vision["cam_head"]["color"])
                 },
                 "left_camera": {
-                    "rgb": _standardize_rgb(vision["cam_left_wrist"]["color"], resize=not True)
+                    "rgb": _standardize_rgb(vision["cam_left_wrist"]["color"])
                 },
                 "right_camera": {
-                    "rgb": _standardize_rgb(vision["cam_right_wrist"]["color"], resize=not True)
+                    "rgb": _standardize_rgb(vision["cam_right_wrist"]["color"])
                 },
             },
             "joint_action": {"vector": self._pack_robodojo_ee16_state(obs)},

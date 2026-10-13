@@ -20,7 +20,36 @@ for i, n in enumerate(init.body):
     ):
         init.body = init.body[:i]
         break
-ns = dict(np=np, Any=Any)
+def _pack_robot_state(obs, _action_type, dims):
+    state = obs["state"]
+    return np.concatenate([
+        state["left_ee_pose"], state["left_ee_joint_state"],
+        state["right_ee_pose"], state["right_ee_joint_state"],
+    ])
+
+
+def _unpack_robot_state(actions, _action_type, dims):
+    return [
+        {
+            "left_ee_pose": action[:7],
+            "left_ee_joint_state": action[7:8],
+            "right_ee_pose": action[8:15],
+            "right_ee_joint_state": action[15:16],
+        }
+        for action in actions
+    ]
+
+
+ns = dict(
+    np=np,
+    Any=Any,
+    Path=Path,
+    POLICY_DIR=Path("policy/VPP2"),
+    resolve_checkpoint_root=lambda *_args, **_kwargs: Path("checkpoints/joint2b_s100000"),
+    get_robot_action_dim_info=lambda _env: {"arm_dim": [6, 6], "ee_dim": [1, 1]},
+    pack_robot_state=_pack_robot_state,
+    unpack_robot_state=_unpack_robot_state,
+)
 exec(compile(ast.Module(body=keep, type_ignores=[]), str(p), "exec"), ns)
 
 
