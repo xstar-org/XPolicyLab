@@ -338,7 +338,7 @@ class Model(ModelTemplate):
             env_idx_list = obs.get("env_idx_list") or []
         else:
             env_idx_list = obs or []
-        actions = []
+        observations, instructions = [], []
         for env_idx in env_idx_list:
             virtual = self._virtual_env_idx(int(env_idx))
             last_obs = self._last_obs_by_virtual.get(virtual)
@@ -348,8 +348,15 @@ class Model(ModelTemplate):
                 virtual, self.default_instruction
             )
             self._check_history_alignment(virtual)
-            actions.append(self._infer_actions(last_obs, instruction))
-        return actions
+            observations.append(last_obs)
+            instructions.append(instruction)
+        if not observations:
+            return []
+        if not hasattr(self.model, "_infer_action_chunks"):
+            return [self._infer_actions(o, i) for o, i in zip(observations, instructions)]
+        chunks = self.model._infer_action_chunks(observations, instructions)
+        return [self._unpack_robodojo_ee16_actions(np.asarray(chunk, dtype=np.float32)[:self.replan_steps])
+                for chunk in chunks]
 
     def _reset_client_state(self, client) -> None:
         for key in [k for k in self._virtual_env_ids if k[0] == client]:
