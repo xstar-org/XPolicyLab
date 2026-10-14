@@ -29,7 +29,7 @@ def run_with_observation_pipeline(env, client, run):
 
         client.call = call
         try:
-            return run(env, client)
+            return run(TASK_ENV, model_client)
         finally:
             try:
                 flush()
@@ -40,9 +40,9 @@ def run_with_observation_pipeline(env, client, run):
 def overlap_observation_uploads(run):
     """Opt in for batch evaluation; synchronous mode remains the default."""
     @wraps(run)
-    def wrapped(env, client):
+    def wrapped(TASK_ENV, model_client):
         enabled = os.environ.get("VPP2_OBSERVATION_UPLOAD_OVERLAP", "0").strip().lower()
         if enabled not in {"1", "true", "yes", "on"}:
-            return run(env, client)
-        return run_with_observation_pipeline(env, client, run)
+            return run(TASK_ENV, model_client)
+        return run_with_observation_pipeline(TASK_ENV, model_client, run)
     return wrapped

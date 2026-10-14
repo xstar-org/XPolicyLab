@@ -73,6 +73,19 @@ class PipelineTests(unittest.TestCase):
         self.assertFalse(client.events)
         self.assertEqual(client.call, original)
 
+    def test_deploy_keyword_call_contract(self):
+        client = Client()
+        original = client.call
+        @pipeline.overlap_observation_uploads
+        def eval_one_episode_batch(TASK_ENV, model_client):
+            model_client.call(func_name="update_obs_batch", obs=[TASK_ENV])
+            return "done"
+        for flag in ["0", "1"]:
+            with patch.dict(os.environ, {"VPP2_OBSERVATION_UPLOAD_OVERLAP": flag}):
+                self.assertEqual(eval_one_episode_batch(TASK_ENV=7, model_client=client), "done")
+                self.assertEqual(client.call, original)
+        self.assertEqual(client.events, [("update_obs_batch", [7]), ("update_obs_batch", [7])])
+
     def test_feature_is_opt_in(self):
         client = Client()
         original = client.call
