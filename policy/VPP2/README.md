@@ -133,3 +133,18 @@ Changing them changes the evaluation setting.
 Observation history is recorded once per action and isolated by client ID.
 Keep `eval_batch: false`: vectorized environment batch methods are explicitly
 unsupported. Multiple independent clients can share one policy server.
+
+### Ordered observation upload overlap
+
+Set `VPP2_OBSERVATION_UPLOAD_OVERLAP=1` on the simulation client to overlap
+batched observation uploads with execution of the current action chunk.
+The default is synchronous. One upload worker retains FIFO order;
+observations are copied before simulation buffers can be reused, and at most
+two uploads are outstanding. Every action, reset, and other RPC waits for
+all preceding uploads, including at rollout exit. Errors propagate to the
+client. History indices, RGB channels, inference steps and model precision
+are unchanged. The flag applies to batched evaluation only.
+
+In this mode the rollout profile's `update_rpc` field measures enqueue and
+backpressure time, rather than background RPC duration. Do not add overlapping
+RPC and simulation phase times to calculate wall-clock throughput.

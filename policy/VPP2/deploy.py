@@ -3,6 +3,8 @@ import socket
 import time
 import uuid
 
+from XPolicyLab.policy.VPP2.observation_pipeline import overlap_observation_uploads
+
 _CLIENT_ID_FIELD = "_vpp2_client_id"
 _NATIVE_STEP_FIELD = "_vpp2_native_step"
 _CLIENT_ID = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
@@ -55,6 +57,7 @@ def eval_one_episode(TASK_ENV, model_client):
                 model_client.call(func_name="update_obs", obs=_with_client_id(obs))
 
 
+@overlap_observation_uploads
 def eval_one_episode_batch(TASK_ENV, model_client):
     profile = {"obs": 0.0, "update": 0.0, "policy": 0.0, "step": 0.0}
     calls = {"obs": 0, "update": 0, "policy": 0, "step": 0}
