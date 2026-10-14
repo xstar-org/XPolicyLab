@@ -29,7 +29,7 @@ def run_with_observation_pipeline(env, client, run):
 
         client.call = call
         try:
-            return run(TASK_ENV, model_client)
+            return run(env, client)
         finally:
             try:
                 flush()
