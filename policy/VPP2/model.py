@@ -69,7 +69,11 @@ class Model(ModelTemplate):
                 model_cfg[key] = str(value)
             path = Path(model_cfg[key]).expanduser()
             model_cfg[key] = str((POLICY_DIR / path).resolve() if not path.is_absolute() else path)
-        for key, expected in (("history_stride", 25), ("video_seed_offset", 1000003), ("action_horizon", 32)):
+        for key, expected in (
+            ("history_stride", 25),
+            ("video_seed_offset", 1000003),
+            ("action_horizon", 32),
+        ):
             if int(model_cfg.get(key, expected)) != expected:
                 raise ValueError(f"This release requires {key}={expected}")
         self.model_cfg = dict(model_cfg)
@@ -90,8 +94,8 @@ class Model(ModelTemplate):
         self.deployment_adapter = (
             str(self.model_cfg.get("deployment_adapter") or "robodojo_ee16").strip().lower()
         )
-        if self.env_cfg_type != "arx_x5" or self.model_cfg.get("eval_batch", False):
-            raise ValueError("This release supports arx_x5 with eval_batch=false")
+        if self.env_cfg_type != "arx_x5":
+            raise ValueError("This release supports arx_x5 only")
         self.robot_action_dim_info = get_robot_action_dim_info(self.env_cfg_type)
         if (len(self.robot_action_dim_info["arm_dim"]) != 2
                 or self.robot_action_dim_info["ee_dim"] != [1, 1]):
@@ -120,6 +124,8 @@ class Model(ModelTemplate):
         self._last_instruction_by_client = {}
         self._last_virtual_by_client = {}
         self._infer_count_by_virtual = {}
+        self._last_obs_by_virtual = {}
+        self._last_instruction_by_virtual = {}
         checkpoint_path = self.model_cfg.get("checkpoint_path") or self.model_cfg.get(
             "ckpt_setting"
         )
@@ -190,6 +196,8 @@ class Model(ModelTemplate):
     def _forget_virtual(self, virtual: int) -> None:
         self._last_infer_step.pop(virtual, None)
         self._infer_count_by_virtual.pop(virtual, None)
+        self._last_obs_by_virtual.pop(virtual, None)
+        self._last_instruction_by_virtual.pop(virtual, None)
         if self.model is not None and hasattr(self.model, "reset_env"):
             self.model.reset_env(virtual)
 
@@ -235,6 +243,32 @@ class Model(ModelTemplate):
         self._last_obs_by_client[client] = self.last_obs
         self._last_instruction_by_client[client] = self.last_instruction
         self._last_virtual_by_client[client] = encoded["env_idx"]
+        self._last_obs_by_virtual[encoded["env_idx"]] = self.last_obs
+        self._last_instruction_by_virtual[encoded["env_idx"]] = self.last_instruction
+
+    def _observe_at_native_step(self, encoded, raw_obs) -> None:
+        """Record an observation at its real simulator step.
+
+        Sparse capture skips frames which can never be selected by VPP2 history.
+        Upstream ``observe`` normally counts calls, so rewrite the just-appended
+        history entry to the explicit native step supplied by the simulator.
+        """
+        self._remember(encoded, raw_obs)
+        model = self.model
+        if model is None or not hasattr(model, "observe"):
+            return
+        model.observe(encoded)
+        native_step = raw_obs.get("_vpp2_native_step")
+        if native_step is None:
+            return
+        env_idx = int(encoded["env_idx"])
+        history = getattr(model, "_history_by_env", {}).get(env_idx)
+        if not history:
+            return
+        _, frame = history.pop()
+        native_step = int(native_step)
+        history.append((native_step, frame))
+        model._history_step_by_env[env_idx] = native_step
 
     def update_obs(self, obs):
         self._bind_client(obs)
@@ -261,14 +295,14 @@ class Model(ModelTemplate):
                 if not isinstance(history_obs, dict):
                     continue
                 encoded = self._encode_observation(history_obs)
-                self._remember(encoded, history_obs)
-                if self.model is not None and hasattr(self.model, "observe"):
-                    self.model.observe(encoded)
+                self._observe_at_native_step(encoded, history_obs)
             return
         encoded = self._encode_observation(obs)
-        self._remember(encoded, obs)
-        if self.model is not None and hasattr(self.model, "observe"):
-            self.model.observe(encoded)
+        self._observe_at_native_step(encoded, obs)
+
+    def update_obs_batch(self, obs_list):
+        for obs in obs_list:
+            self.update_obs(obs)
 
     def _check_history_alignment(self, virtual: int) -> None:
         """Before the k-th inference of an episode exactly replan_steps*k
@@ -301,18 +335,38 @@ class Model(ModelTemplate):
     def get_action(self, obs=None):
         self._bind_client(obs)
         client = self._client_key()
-        last_obs = self._last_obs_by_client.get(client)
-        instruction = self._last_instruction_by_client.get(client, self.default_instruction)
+        last_obs = self._last_obs_by_client.get(client, self.last_obs)
+        instruction = self._last_instruction_by_client.get(client, self.last_instruction)
         virtual = self._last_virtual_by_client.get(client)
         if virtual is not None:
             self._check_history_alignment(virtual)
         return self._infer_actions(last_obs, instruction)
 
-    def update_obs_batch(self, obs_list):
-        raise NotImplementedError("Use eval_batch=false; vectorized environments are not supported")
-
-    def get_action_batch(self, env_idx_list=None):
-        raise NotImplementedError("Use eval_batch=false; vectorized environments are not supported")
+    def get_action_batch(self, obs=None):
+        if isinstance(obs, dict):
+            self._bind_client(obs)
+            env_idx_list = obs.get("env_idx_list") or []
+        else:
+            env_idx_list = obs or []
+        observations, instructions = [], []
+        for env_idx in env_idx_list:
+            virtual = self._virtual_env_idx(int(env_idx))
+            last_obs = self._last_obs_by_virtual.get(virtual)
+            if last_obs is None:
+                raise RuntimeError(f"No VPP2 observation recorded for env {env_idx}.")
+            instruction = self._last_instruction_by_virtual.get(
+                virtual, self.default_instruction
+            )
+            self._check_history_alignment(virtual)
+            observations.append(last_obs)
+            instructions.append(instruction)
+        if not observations:
+            return []
+        if not hasattr(self.model, "_infer_action_chunks"):
+            return [self._infer_actions(o, i) for o, i in zip(observations, instructions)]
+        chunks = self.model._infer_action_chunks(observations, instructions)
+        return [self._unpack_robodojo_ee16_actions(np.asarray(chunk, dtype=np.float32)[:self.replan_steps])
+                for chunk in chunks]
 
     def _reset_client_state(self, client) -> None:
         for key in [k for k in self._virtual_env_ids if k[0] == client]:
@@ -345,6 +399,8 @@ class Model(ModelTemplate):
         self._virtual_env_ids.clear()
         self._last_infer_step.clear()
         self._infer_count_by_virtual.clear()
+        self._last_obs_by_virtual.clear()
+        self._last_instruction_by_virtual.clear()
         self._last_obs_by_client.clear()
         self._last_instruction_by_client.clear()
         self._last_virtual_by_client.clear()
