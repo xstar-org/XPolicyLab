@@ -204,9 +204,10 @@ For diagnostic comparisons, launch scripts accept `VPP2_NUM_INFERENCE_STEPS`,
 Changing them changes the evaluation setting.
 
 Observation history is recorded once per action and isolated by client ID.
-Keep `eval_batch: false`: vectorized environment batch methods are explicitly
-unsupported. Multiple independent clients can share one policy server.
-# Optional environment batching
+The scalar deployment uses `eval_batch: false`. Multiple independent clients can
+share one policy server; optional vectorized evaluation is described below.
+
+## Optional environment batching
 
 The default `eval_batch: false` keeps the single-environment deployment loop.
 Set `eval_batch: true` for RoboDojo multi-environment evaluation and use a VPP2
