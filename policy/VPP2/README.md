@@ -206,3 +206,17 @@ Changing them changes the evaluation setting.
 Observation history is recorded once per action and isolated by client ID.
 Keep `eval_batch: false`: vectorized environment batch methods are explicitly
 unsupported. Multiple independent clients can share one policy server.
+# Optional environment batching
+
+The default `eval_batch: false` keeps the single-environment deployment loop.
+Set `eval_batch: true` for RoboDojo multi-environment evaluation and use a VPP2
+backend providing `_infer_action_chunks`. `VPP2_INFERENCE_BATCH_SIZE` caps each
+real model batch (default 1); for an eight-environment run set it to 8 in the
+policy server environment. A smaller cap splits requests without changing their
+environment order. Observations remain dense at every executed native action.
+
+The adapter retains independent observation history and instructions for each
+client/environment. Environments ending inside a chunk are removed from the
+remaining actions and observations. Reset clears only the identified client's
+episode state. Neither observation upload overlap nor sparse history capture is
+enabled by this change. Task-score equivalence must be validated separately.
