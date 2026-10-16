@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import os
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('vpp2_deploy', Path(__file__).resolve().parents[1] / 'policy/VPP2/deploy.py')
 deploy = importlib.util.module_from_spec(spec)
@@ -46,12 +48,16 @@ class Client:
 
 class DeployTests(unittest.TestCase):
     def test_early_end_and_tail_keep_exact_dense_history(self):
-        env, client = Env(), Client()
-        deploy.eval_one_episode_batch(TASK_ENV=env, model_client=client)
-        self.assertEqual(client.batches, [[2, 7], [7]])
-        self.assertEqual([s for i, s in client.observations if i == 7], [0, 1, 2, 3, 4])
-        self.assertEqual([s for i, s in client.observations if i == 2], [0])
-        self.assertEqual(env.steps, {2: 1, 7: 5})
+        for overlap in ("0", "1"):
+            with self.subTest(overlap=overlap), patch.dict(
+                os.environ, {"VPP2_OBSERVATION_UPLOAD_OVERLAP": overlap}
+            ):
+                env, client = Env(), Client()
+                deploy.eval_one_episode_batch(TASK_ENV=env, model_client=client)
+                self.assertEqual(client.batches, [[2, 7], [7]])
+                self.assertEqual([s for i, s in client.observations if i == 7], [0, 1, 2, 3, 4])
+                self.assertEqual([s for i, s in client.observations if i == 2], [0])
+                self.assertEqual(env.steps, {2: 1, 7: 5})
 
     def test_invalid_chunk_rejected_before_actions(self):
         env = Env()
