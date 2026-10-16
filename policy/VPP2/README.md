@@ -221,3 +221,20 @@ client/environment. Environments ending inside a chunk are removed from the
 remaining actions and observations. Reset clears only the identified client's
 episode state. Neither observation upload overlap nor sparse history capture is
 enabled by this change. Task-score equivalence must be validated separately.
+
+## Optional ordered observation upload
+
+Set `VPP2_OBSERVATION_UPLOAD_OVERLAP=1` in the **simulation client** environment
+to overlap dense observation RPCs with the next simulation action. The default
+is `0`. A single upload worker owns the synchronous client while uploads are
+pending; at most two uploads are retained, with backpressure when full. Payloads
+are copied before the next camera/state buffer reuse. Every action request,
+reset, custom RPC and rollout exit drains pending uploads first. Upload errors
+propagate before inference. No observations are dropped or sparsely sampled.
+
+This option applies only to the batch deployment loop. It preserves the scalar
+entry point, server microbatch size, model math and history configuration. It
+does not run concurrent model calls, predict future observations, or guarantee
+continuous Tensor Core activity: simulation and rendering may still limit the
+request supply. Report queue timing, throughput and hardware metrics separately.
+Real simulation validation and throughput results for this migration are pending.

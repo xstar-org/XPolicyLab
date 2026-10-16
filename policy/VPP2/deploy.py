@@ -2,6 +2,8 @@ import os
 import socket
 import uuid
 
+from XPolicyLab.policy.VPP2.observation_pipeline import overlap_observation_uploads
+
 # VPP2 keeps per-episode observation history on the policy server.  Every
 # executed action records exactly one observation through update_obs, and each
 # call carries this process's client id so one server can serve several
@@ -35,6 +37,7 @@ def eval_one_episode(TASK_ENV, model_client):
             model_client.call(func_name="update_obs", obs=_with_client_id(obs))
 
 
+@overlap_observation_uploads
 def eval_one_episode_batch(TASK_ENV, model_client):
     """Execute independently terminating environments with dense history."""
     model_client.call(func_name="reset")
