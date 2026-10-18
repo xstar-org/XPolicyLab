@@ -75,3 +75,36 @@ def test_incompatible_server_fails_before_actions(version):
     with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1',ROBODOJO_SAVE_EVAL_VIDEOS='false'):
         with pytest.raises(ValueError,match='protocol'): deploy.eval_one_episode_batch(env,Old())
     assert not env.actions and not env.captured
+
+@pytest.mark.parametrize('chunk_size', [0, 23, 25])
+def test_native_replan_length_rejected_before_actions(chunk_size):
+    class WrongLength(Client):
+        def call(self, func_name, obs=None):
+            if func_name == 'get_action_batch':
+                return [[e] * chunk_size for e in obs['env_idx_list']]
+            return super().call(func_name, obs)
+    env = Env()
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+        with pytest.raises(ValueError):
+            deploy.eval_one_episode_batch(env, WrongLength())
+    assert not env.actions
+
+
+def test_native_wrong_replan_boundary_rejected_before_observation():
+    env = Env()
+    env.take_action_cnt = [1, 1]
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+        with pytest.raises(ValueError, match='24-action boundary'):
+            deploy.eval_one_episode_batch(env, Client())
+    assert not env.actions and not env.captured
+
+
+def test_native_observation_identity_mismatch_rejected_before_actions():
+    class Reordered(Env):
+        def get_obs_batch(self, ids):
+            return super().get_obs_batch(ids)[::-1]
+    env = Reordered()
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+        with pytest.raises(ValueError, match='identities'):
+            deploy.eval_one_episode_batch(env, Client())
+    assert not env.actions
