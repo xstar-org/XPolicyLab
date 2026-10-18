@@ -17,6 +17,4 @@ def needs_frame(step):
 
 
 def sampling_enabled():
-    enabled = os.environ.get("VPP2_NATIVE_FRAME_SAMPLING", "0").lower() in {"1", "true", "yes"}
-    video = os.environ.get("ROBODOJO_SAVE_EVAL_VIDEOS", "true").lower() not in {"0", "false", "no"}
-    return enabled and not video
+    return os.environ.get("VPP2_NATIVE_FRAME_SAMPLING", "0").lower() in {"1", "true", "yes"}

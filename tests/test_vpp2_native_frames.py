@@ -1,4 +1,4 @@
-"""Test actual client routing, early termination, video fallback, and guards."""
+"""Test actual client routing, early termination, default dense capture, and guards."""
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -43,7 +43,7 @@ class Client:
 
 def test_native_clock_early_end_reset_and_finite_guards():
     env,client=Env(),Client()
-    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1',ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1'):
         deploy.eval_one_episode_batch(env,client)
     assert env.take_action_cnt==[53,97] and len(env.actions)==150
     assert [(o['env_idx'],o[NATIVE_STEP_FIELD]) for o in client.uploads]==env.captured
@@ -54,10 +54,11 @@ def test_native_clock_early_end_reset_and_finite_guards():
     assert client.calls[:3]==['native_frame_protocol','reset','reset_client']
 
 
-@pytest.mark.parametrize('enabled,video',[('0','false'),('1','true')])
-def test_default_and_video_keep_dense_native_frames(enabled,video):
+@pytest.mark.parametrize('enabled', [None, '0'])
+def test_default_and_disabled_keep_dense_native_frames(enabled):
     env,client=Env(),Client()
-    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING=enabled,ROBODOJO_SAVE_EVAL_VIDEOS=video):
+    settings = {} if enabled is None else {'VPP2_NATIVE_FRAME_SAMPLING': enabled}
+    with patch.dict('os.environ', settings, clear=True):
         deploy.eval_one_episode_batch(env,client)
     assert 'native_frame_protocol' not in client.calls
     assert all(NATIVE_STEP_FIELD not in obs for obs in client.uploads)
@@ -72,7 +73,7 @@ def test_incompatible_server_fails_before_actions(version):
             if func_name=='native_frame_protocol': return version
             return super().call(func_name,obs)
     env=Env()
-    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1',ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1'):
         with pytest.raises(ValueError,match='protocol'): deploy.eval_one_episode_batch(env,Old())
     assert not env.actions and not env.captured
 
@@ -84,7 +85,7 @@ def test_native_replan_length_rejected_before_actions(chunk_size):
                 return [[e] * chunk_size for e in obs['env_idx_list']]
             return super().call(func_name, obs)
     env = Env()
-    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1'):
         with pytest.raises(ValueError):
             deploy.eval_one_episode_batch(env, WrongLength())
     assert not env.actions
@@ -93,7 +94,7 @@ def test_native_replan_length_rejected_before_actions(chunk_size):
 def test_native_wrong_replan_boundary_rejected_before_observation():
     env = Env()
     env.take_action_cnt = [1, 1]
-    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1'):
         with pytest.raises(ValueError, match='24-action boundary'):
             deploy.eval_one_episode_batch(env, Client())
     assert not env.actions and not env.captured
@@ -104,7 +105,7 @@ def test_native_observation_identity_mismatch_rejected_before_actions():
         def get_obs_batch(self, ids):
             return super().get_obs_batch(ids)[::-1]
     env = Reordered()
-    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1', ROBODOJO_SAVE_EVAL_VIDEOS='false'):
+    with patch.dict('os.environ', VPP2_NATIVE_FRAME_SAMPLING='1'):
         with pytest.raises(ValueError, match='identities'):
             deploy.eval_one_episode_batch(env, Client())
     assert not env.actions

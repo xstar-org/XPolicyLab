@@ -41,7 +41,7 @@ def eval_one_episode(TASK_ENV, model_client):
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):
-    """Execute independent environments; dense is the default and video path."""
+    """Execute independent environments; dense is the default."""
     sample_native = sampling_enabled()
     if sample_native:
         version = model_client.call(func_name="native_frame_protocol", obs={_CLIENT_ID_FIELD: _CLIENT_ID})

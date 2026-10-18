@@ -224,9 +224,9 @@ enabled by this change. Task-score equivalence must be validated separately.
 
 ## Experimental required-native-frame capture
 
-Dense observations remain the default. For a video-disabled diagnostic, set
-`VPP2_NATIVE_FRAME_SAMPLING=1` in the **simulator client's** environment, together
-with `ROBODOJO_SAVE_EVAL_VIDEOS=false` and `eval_batch: true`. This also supports
+Dense observations remain the default. Set `VPP2_NATIVE_FRAME_SAMPLING=1` in the
+**simulator client's** environment with `eval_batch: true` to enable required-frame
+capture. No separate video environment variable is required. This also supports
 one environment through the batch entry point. The scalar entry point is unchanged.
 
 The matching VPP2 backend must implement native-frame protocol v1. Before executing any action, the client checks that the server returns the
@@ -239,8 +239,10 @@ mismatches raise errors. Reset is required before changing an environment's
 recording mode. RGB channels, resolution, physics, controls and model math do not
 change; omitted camera reads still run the original finite/PhysX guards.
 
-With videos enabled, the client automatically uses dense observation capture so
-the normal native-rate videos are retained. No duplicate images are inserted to
-represent skipped frames. Reducing renderer updates can change temporal rendering
+This option does not disable RoboDojo video writing. In sampled mode, any videos
+written from these observations contain only the captured frames, not every
+native action step; their playback timing is not a complete simulator timeline.
+For complete native-rate capture, leave `VPP2_NATIVE_FRAME_SAMPLING` unset or set
+it to `0`. No duplicate images are inserted to represent skipped frames. Reducing renderer updates can change temporal rendering
 state, so identical history indices do **not** establish pixel or task-score
 equivalence. This option is experimental and requires per-task effect validation.
