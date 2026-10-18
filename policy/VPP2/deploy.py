@@ -3,7 +3,7 @@ import socket
 import uuid
 
 from XPolicyLab.policy.VPP2.native_frames import (
-    prepare_native_frames, sampling_enabled,
+    PROTOCOL_VERSION, collect_native_frames, sampling_enabled,
 )
 
 # VPP2 keeps per-episode observation history on the policy server.  Every
@@ -41,31 +41,12 @@ def eval_one_episode(TASK_ENV, model_client):
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):
-    """Execute independent environments; dense is the default."""
-    capture = TASK_ENV.get_obs_batch
-
-    def upload_observations(env_ids):
-        observations = capture(env_ids)
-        if observations:
-            model_client.call(func_name="update_obs_batch", obs=[
-                _with_client_id(obs) for obs in observations
-            ])
-
-    def request_actions(env_ids):
-        upload_observations(env_ids)
-        actions = model_client.call(func_name="get_action_batch", obs={
-            "env_idx_list": env_ids, _CLIENT_ID_FIELD: _CLIENT_ID,
-        })
-        if len(actions) != len(env_ids) or any(not len(chunk) for chunk in actions):
-            raise ValueError("Policy must return a nonempty action chunk for each active environment")
-        if len({len(chunk) for chunk in actions}) != 1:
-            raise ValueError("Policy action chunks must have equal length")
-        return actions
-
-    if sampling_enabled():
-        capture, request_actions = prepare_native_frames(
-            TASK_ENV, model_client, request_actions, {_CLIENT_ID_FIELD: _CLIENT_ID},
-        )
+    """Share one observation/action loop; dense capture is the default."""
+    sample_native = sampling_enabled()
+    if sample_native:
+        version = model_client.call(func_name="native_frame_protocol", obs={_CLIENT_ID_FIELD: _CLIENT_ID})
+        if type(version) is not int or version != PROTOCOL_VERSION:
+            raise ValueError("Server does not implement VPP2 native-frame protocol v1")
 
     model_client.call(func_name="reset")
     model_client.call(func_name="reset_client", obs={_CLIENT_ID_FIELD: _CLIENT_ID})
@@ -73,11 +54,31 @@ def eval_one_episode_batch(TASK_ENV, model_client):
         env_ids = TASK_ENV.get_running_env_idx_list()
         if not env_ids:
             break
-        actions = request_actions(env_ids)
-        chunk_size = len(actions[0])
-        for step in range(chunk_size):
+        actions = None
+        step = 0
+        while True:
+            if sample_native:
+                observations = collect_native_frames(TASK_ENV, env_ids, replan=actions is None)
+            else:
+                observations = TASK_ENV.get_obs_batch(env_ids)
+            if observations:
+                model_client.call(func_name="update_obs_batch", obs=[
+                    _with_client_id(obs) for obs in observations
+                ])
+
+            if actions is None:
+                actions = model_client.call(func_name="get_action_batch", obs={
+                    "env_idx_list": env_ids, _CLIENT_ID_FIELD: _CLIENT_ID,
+                })
+                if len(actions) != len(env_ids) or any(not len(chunk) for chunk in actions):
+                    raise ValueError("Policy must return a nonempty action chunk for each active environment")
+                if len({len(chunk) for chunk in actions}) != 1:
+                    raise ValueError("Policy action chunks must have equal length")
+                if sample_native and len(actions[0]) != 24:
+                    raise ValueError("Native-frame v1 requires exactly 24 executed actions per replan")
+
             TASK_ENV.take_action_batch([chunk[step] for chunk in actions], env_ids)
-            if TASK_ENV.is_episode_end() or step + 1 == chunk_size:
+            if TASK_ENV.is_episode_end() or step + 1 == len(actions[0]):
                 break
             running = set(TASK_ENV.get_running_env_idx_list())
             keep = [i for i, env_id in enumerate(env_ids) if env_id in running]
@@ -85,4 +86,4 @@ def eval_one_episode_batch(TASK_ENV, model_client):
             env_ids = [env_ids[i] for i in keep]
             if not env_ids:
                 break
-            upload_observations(env_ids)
+            step += 1
