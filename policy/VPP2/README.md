@@ -229,9 +229,9 @@ Dense observations remain the default. For a video-disabled diagnostic, set
 with `ROBODOJO_SAVE_EVAL_VIDEOS=false` and `eval_batch: true`. This also supports
 one environment through the batch entry point. The scalar entry point is unchanged.
 
-The matching VPP2 backend must implement native-frame protocol v1. The client
-negotiates replan=24, anchor+8 history frames and stride=25 before executing any
-action. It captures the union of genuine native frames needed by future replans,
+The matching VPP2 backend must implement native-frame protocol v1. Before executing any action, the client checks that the server returns the
+integer protocol version `1`. The backend validates the fixed v1 configuration:
+replan=24, anchor+8 history frames and stride=25. It captures the union of genuine native frames needed by future replans,
 and sends `_vpp2_history_native_step` as the absolute per-environment action index.
 The server must preserve that index through virtual client/environment IDs.
 Missing required history, duplicate frames, changed execution lengths and protocol

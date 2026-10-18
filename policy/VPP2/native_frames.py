@@ -2,7 +2,7 @@
 import os
 
 NATIVE_STEP_FIELD = "_vpp2_history_native_step"
-CAPABILITIES = {"version": 1, "replan": 24, "history_frames": 8, "stride": 25}
+PROTOCOL_VERSION = 1
 
 
 def native_step(value):
@@ -23,8 +23,8 @@ def sampling_enabled():
 
 
 def evaluate_native_frames(env, client, client_id_field, client_id, tag_observation):
-    capabilities = client.call(func_name="native_frame_protocol", obs={client_id_field: client_id})
-    if capabilities != CAPABILITIES:
+    version = client.call(func_name="native_frame_protocol", obs={client_id_field: client_id})
+    if type(version) is not int or version != PROTOCOL_VERSION:
         raise ValueError("Server does not implement VPP2 native-frame protocol v1")
     client.call(func_name="reset")
     client.call(func_name="reset_client", obs={client_id_field: client_id})

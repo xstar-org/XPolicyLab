@@ -177,10 +177,10 @@ class Model(ModelTemplate):
         return adapted
 
     def native_frame_protocol(self, obs=None):
-        capability = getattr(self.model, "native_frame_capabilities", None)
-        if capability is None:
+        protocol_version = getattr(self.model, "native_frame_protocol_version", None)
+        if protocol_version is None:
             raise ValueError("Installed VPP2 backend lacks native-frame protocol support")
-        return capability()
+        return protocol_version()
 
     CLIENT_ID_FIELD = "_vpp2_client_id"
 

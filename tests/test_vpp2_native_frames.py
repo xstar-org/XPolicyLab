@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from XPolicyLab.policy.VPP2 import deploy
-from XPolicyLab.policy.VPP2.native_frames import CAPABILITIES, NATIVE_STEP_FIELD, needs_frame
+from XPolicyLab.policy.VPP2.native_frames import PROTOCOL_VERSION, NATIVE_STEP_FIELD, needs_frame
 
 
 class Env:
@@ -36,7 +36,7 @@ class Client:
     def __init__(self): self.uploads=[]; self.calls=[]
     def call(self, func_name, obs=None):
         self.calls.append(func_name)
-        if func_name=='native_frame_protocol': return dict(CAPABILITIES)
+        if func_name=='native_frame_protocol': return PROTOCOL_VERSION
         if func_name=='update_obs_batch': self.uploads.extend(obs)
         if func_name=='get_action_batch': return [[e]*24 for e in obs['env_idx_list']]
 
@@ -65,10 +65,11 @@ def test_default_and_video_keep_dense_native_frames(enabled,video):
     assert [t for e,t in env.captured if e==1]==list(range(97))
 
 
-def test_incompatible_server_fails_before_actions():
+@pytest.mark.parametrize("version", [2, {"version": 1}, True, 1.0, None])
+def test_incompatible_server_fails_before_actions(version):
     class Old(Client):
         def call(self,func_name,obs=None):
-            if func_name=='native_frame_protocol': return {'version':2}
+            if func_name=='native_frame_protocol': return version
             return super().call(func_name,obs)
     env=Env()
     with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1',ROBODOJO_SAVE_EVAL_VIDEOS='false'):
