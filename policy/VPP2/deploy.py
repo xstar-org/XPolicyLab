@@ -2,6 +2,8 @@ import os
 import socket
 import uuid
 
+from XPolicyLab.policy.VPP2.native_frames import sampling_enabled, evaluate_native_frames
+
 # VPP2 keeps per-episode observation history on the policy server.  Every
 # executed action records exactly one observation through update_obs, and each
 # call carries this process's client id so one server can serve several
@@ -36,7 +38,9 @@ def eval_one_episode(TASK_ENV, model_client):
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):
-    """Execute independently terminating environments with dense history."""
+    """Execute independent environments; dense is the default and video path."""
+    if sampling_enabled():
+        return evaluate_native_frames(TASK_ENV, model_client, _CLIENT_ID_FIELD, _CLIENT_ID, _with_client_id)
     model_client.call(func_name="reset")
     model_client.call(func_name="reset_client", obs={_CLIENT_ID_FIELD: _CLIENT_ID})
     while not TASK_ENV.is_episode_end():

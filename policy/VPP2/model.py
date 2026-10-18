@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 import numpy as np
 from XPolicyLab.model_template import ModelTemplate
+from XPolicyLab.policy.VPP2.native_frames import NATIVE_STEP_FIELD, native_step
 from XPolicyLab.utils.checkpoint_resolver import resolve_checkpoint_root
 from XPolicyLab.utils.process_data import (
     get_robot_action_dim_info, pack_robot_state, unpack_robot_state,
@@ -171,7 +172,15 @@ class Model(ModelTemplate):
             },
             "joint_action": {"vector": self._pack_robodojo_ee16_state(obs)},
         }
+        if NATIVE_STEP_FIELD in obs:
+            adapted[NATIVE_STEP_FIELD] = native_step(obs[NATIVE_STEP_FIELD])
         return adapted
+
+    def native_frame_protocol(self, obs=None):
+        capability = getattr(self.model, "native_frame_capabilities", None)
+        if capability is None:
+            raise ValueError("Installed VPP2 backend lacks native-frame protocol support")
+        return capability()
 
     CLIENT_ID_FIELD = "_vpp2_client_id"
 

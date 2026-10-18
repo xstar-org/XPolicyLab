@@ -4,6 +4,9 @@ from typing import Any
 from collections import deque
 from types import SimpleNamespace
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from XPolicyLab.policy.VPP2.native_frames import NATIVE_STEP_FIELD, native_step
 import numpy as np
 
 p = Path(__file__).resolve().parents[1] / "policy/VPP2/model.py"
@@ -41,6 +44,8 @@ def _unpack_robot_state(actions, _action_type, dims):
 
 
 ns = dict(
+    NATIVE_STEP_FIELD=NATIVE_STEP_FIELD,
+    native_step=native_step,
     np=np,
     Any=Any,
     Path=Path,
@@ -80,6 +85,38 @@ class Backend:
 
 
 class ClientIsolation(unittest.TestCase):
+    def test_explicit_history_clock_survives_virtual_ids_and_client_reset(self):
+        m = ns["Model"](dict(action_type="ee", env_cfg_type="arx_x5"))
+        class NativeBackend(Backend):
+            def observe(self, observation):
+                i=observation['env_idx']
+                step=observation[NATIVE_STEP_FIELD]
+                self._history_by_env.setdefault(i, deque()).append((step,None))
+                self._history_step_by_env[i]=step
+            def native_frame_capabilities(self):
+                return {'version':1,'replan':24,'history_frames':8,'stride':25}
+        m.model=NativeBackend()
+        virtuals={}
+        for client in ['A','B']:
+            for step in [0,17,18,19,20,21,22,23,24]:
+                obs=dict(_vpp2_client_id=client,env_idx=7,
+                         vision={c:dict(color=np.zeros((2,2,3),dtype=np.uint8))
+                                 for c in ['cam_head','cam_left_wrist','cam_right_wrist']},
+                         state={k:np.zeros(7 if 'pose' in k else 1)
+                                for k in ['left_ee_pose','left_ee_joint_state','right_ee_pose','right_ee_joint_state']})
+                obs[NATIVE_STEP_FIELD]=step
+                m.update_obs_batch([obs])
+                if step in [0,24]:
+                    m.get_action_batch(dict(_vpp2_client_id=client,env_idx_list=[7]))
+            virtuals[client]=m.model.calls[-1][0][0]
+        assert virtuals['A']!=virtuals['B']
+        assert m.model._history_step_by_env[virtuals['A']]==24
+        assert m.history_guard_mismatches==0
+        m.reset_client(dict(_vpp2_client_id='A'))
+        assert virtuals['A'] not in m.model._history_step_by_env
+        assert m.model._history_step_by_env[virtuals['B']]==24
+        assert m.native_frame_protocol()['version']==1
+
     def test_interleaved_batch_clients_and_reset(self):
         m = ns["Model"](dict(action_type="ee", env_cfg_type="arx_x5"))
         m.model = Backend()

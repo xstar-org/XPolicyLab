@@ -221,3 +221,26 @@ client/environment. Environments ending inside a chunk are removed from the
 remaining actions and observations. Reset clears only the identified client's
 episode state. Neither observation upload overlap nor sparse history capture is
 enabled by this change. Task-score equivalence must be validated separately.
+
+## Experimental required-native-frame capture
+
+Dense observations remain the default. For a video-disabled diagnostic, set
+`VPP2_NATIVE_FRAME_SAMPLING=1` in the **simulator client's** environment, together
+with `ROBODOJO_SAVE_EVAL_VIDEOS=false` and `eval_batch: true`. This also supports
+one environment through the batch entry point. The scalar entry point is unchanged.
+
+The matching VPP2 backend must implement native-frame protocol v1. The client
+negotiates replan=24, anchor+8 history frames and stride=25 before executing any
+action. It captures the union of genuine native frames needed by future replans,
+and sends `_vpp2_history_native_step` as the absolute per-environment action index.
+The server must preserve that index through virtual client/environment IDs.
+Missing required history, duplicate frames, changed execution lengths and protocol
+mismatches raise errors. Reset is required before changing an environment's
+recording mode. RGB channels, resolution, physics, controls and model math do not
+change; omitted camera reads still run the original finite/PhysX guards.
+
+With videos enabled, the client automatically uses dense observation capture so
+the normal native-rate videos are retained. No duplicate images are inserted to
+represent skipped frames. Reducing renderer updates can change temporal rendering
+state, so identical history indices do **not** establish pixel or task-score
+equivalence. This option is experimental and requires per-task effect validation.
