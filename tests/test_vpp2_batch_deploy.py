@@ -2,6 +2,8 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 spec = importlib.util.spec_from_file_location('vpp2_deploy', Path(__file__).resolve().parents[1] / 'policy/VPP2/deploy.py')
 deploy = importlib.util.module_from_spec(spec)

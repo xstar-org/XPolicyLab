@@ -221,3 +221,29 @@ client/environment. Environments ending inside a chunk are removed from the
 remaining actions and observations. Reset clears only the identified client's
 episode state. Neither observation upload overlap nor sparse history capture is
 enabled by this change. Task-score equivalence must be validated separately.
+
+## Experimental required-native-frame capture
+
+Dense observations remain the default. Set `VPP2_NATIVE_FRAME_SAMPLING=1` in the
+**simulator client's** environment with `eval_batch: true` to enable required-frame
+capture. No separate video environment variable is required. This also supports
+one environment through the batch entry point. The scalar entry point is unchanged.
+
+Use the matching VPP2 backend from the paired PR; no separate version handshake
+is performed. The backend validates replan=24, anchor+8 history frames and
+stride=25 when it receives native-indexed observations. The client captures the
+union of genuine frames needed by future replans and sends
+`_vpp2_history_native_step` as the absolute per-environment action index.
+The server must preserve that index through virtual client/environment IDs.
+Missing required history, duplicate frames, changed execution lengths and invalid history
+configuration raise errors. Reset is required before changing an environment's
+recording mode. RGB channels, resolution, physics, controls and model math do not
+change; omitted camera reads still run the original finite/PhysX guards.
+
+This option does not disable RoboDojo video writing. In sampled mode, any videos
+written from these observations contain only the captured frames, not every
+native action step; their playback timing is not a complete simulator timeline.
+For complete native-rate capture, leave `VPP2_NATIVE_FRAME_SAMPLING` unset or set
+it to `0`. No duplicate images are inserted to represent skipped frames. Reducing renderer updates can change temporal rendering
+state, so identical history indices do **not** establish pixel or task-score
+equivalence. This option is experimental and requires per-task effect validation.
