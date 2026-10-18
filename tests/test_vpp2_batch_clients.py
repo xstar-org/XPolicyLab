@@ -93,8 +93,6 @@ class ClientIsolation(unittest.TestCase):
                 step=observation[NATIVE_STEP_FIELD]
                 self._history_by_env.setdefault(i, deque()).append((step,None))
                 self._history_step_by_env[i]=step
-            def native_frame_protocol_version(self):
-                return 1
         m.model=NativeBackend()
         virtuals={}
         for client in ['A','B']:
@@ -115,7 +113,6 @@ class ClientIsolation(unittest.TestCase):
         m.reset_client(dict(_vpp2_client_id='A'))
         assert virtuals['A'] not in m.model._history_step_by_env
         assert m.model._history_step_by_env[virtuals['B']]==24
-        assert m.native_frame_protocol()==1
 
     def test_interleaved_batch_clients_and_reset(self):
         m = ns["Model"](dict(action_type="ee", env_cfg_type="arx_x5"))

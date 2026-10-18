@@ -176,12 +176,6 @@ class Model(ModelTemplate):
             adapted[NATIVE_STEP_FIELD] = native_step(obs[NATIVE_STEP_FIELD])
         return adapted
 
-    def native_frame_protocol(self, obs=None):
-        protocol_version = getattr(self.model, "native_frame_protocol_version", None)
-        if protocol_version is None:
-            raise ValueError("Installed VPP2 backend lacks native-frame protocol support")
-        return protocol_version()
-
     CLIENT_ID_FIELD = "_vpp2_client_id"
 
     def _bind_client(self, obs) -> None:

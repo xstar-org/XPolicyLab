@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from XPolicyLab.policy.VPP2 import deploy
-from XPolicyLab.policy.VPP2.native_frames import PROTOCOL_VERSION, NATIVE_STEP_FIELD, needs_frame
+from XPolicyLab.policy.VPP2.native_frames import NATIVE_STEP_FIELD, needs_frame
 
 
 class Env:
@@ -36,7 +36,6 @@ class Client:
     def __init__(self): self.uploads=[]; self.calls=[]
     def call(self, func_name, obs=None):
         self.calls.append(func_name)
-        if func_name=='native_frame_protocol': return PROTOCOL_VERSION
         if func_name=='update_obs_batch': self.uploads.extend(obs)
         if func_name=='get_action_batch': return [[e]*24 for e in obs['env_idx_list']]
 
@@ -51,7 +50,7 @@ def test_native_clock_early_end_reset_and_finite_guards():
     assert all(not needs_frame(t) for _,t in env.guarded)
     assert len(env.captured)<60 and env.guarded
     assert len({o[deploy._CLIENT_ID_FIELD] for o in client.uploads})==1
-    assert client.calls[:3]==['native_frame_protocol','reset','reset_client']
+    assert client.calls[:2]==['reset','reset_client']
 
 
 @pytest.mark.parametrize('enabled', [None, '0'])
@@ -60,22 +59,10 @@ def test_default_and_disabled_keep_dense_native_frames(enabled):
     settings = {} if enabled is None else {'VPP2_NATIVE_FRAME_SAMPLING': enabled}
     with patch.dict('os.environ', settings, clear=True):
         deploy.eval_one_episode_batch(env,client)
-    assert 'native_frame_protocol' not in client.calls
     assert all(NATIVE_STEP_FIELD not in obs for obs in client.uploads)
     assert len(env.captured)==len(client.uploads)==150
     assert [t for e,t in env.captured if e==1]==list(range(97))
 
-
-@pytest.mark.parametrize("version", [2, {"version": 1}, True, 1.0, None])
-def test_incompatible_server_fails_before_actions(version):
-    class Old(Client):
-        def call(self,func_name,obs=None):
-            if func_name=='native_frame_protocol': return version
-            return super().call(func_name,obs)
-    env=Env()
-    with patch.dict('os.environ',VPP2_NATIVE_FRAME_SAMPLING='1'):
-        with pytest.raises(ValueError,match='protocol'): deploy.eval_one_episode_batch(env,Old())
-    assert not env.actions and not env.captured
 
 @pytest.mark.parametrize('chunk_size', [0, 23, 25])
 def test_native_replan_length_rejected_before_actions(chunk_size):

@@ -2,7 +2,6 @@
 import os
 
 NATIVE_STEP_FIELD = "_vpp2_history_native_step"
-PROTOCOL_VERSION = 1
 
 
 def native_step(value):

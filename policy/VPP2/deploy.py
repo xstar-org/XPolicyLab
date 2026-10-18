@@ -3,7 +3,7 @@ import socket
 import uuid
 
 from XPolicyLab.policy.VPP2.native_frames import (
-    PROTOCOL_VERSION, collect_native_frames, sampling_enabled,
+    collect_native_frames, sampling_enabled,
 )
 
 # VPP2 keeps per-episode observation history on the policy server.  Every
@@ -43,11 +43,6 @@ def eval_one_episode(TASK_ENV, model_client):
 def eval_one_episode_batch(TASK_ENV, model_client):
     """Share one observation/action loop; dense capture is the default."""
     sample_native = sampling_enabled()
-    if sample_native:
-        version = model_client.call(func_name="native_frame_protocol", obs={_CLIENT_ID_FIELD: _CLIENT_ID})
-        if type(version) is not int or version != PROTOCOL_VERSION:
-            raise ValueError("Server does not implement VPP2 native-frame protocol v1")
-
     model_client.call(func_name="reset")
     model_client.call(func_name="reset_client", obs={_CLIENT_ID_FIELD: _CLIENT_ID})
     while not TASK_ENV.is_episode_end():

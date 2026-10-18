@@ -229,13 +229,14 @@ Dense observations remain the default. Set `VPP2_NATIVE_FRAME_SAMPLING=1` in the
 capture. No separate video environment variable is required. This also supports
 one environment through the batch entry point. The scalar entry point is unchanged.
 
-The matching VPP2 backend must implement native-frame protocol v1. Before executing any action, the client checks that the server returns the
-integer protocol version `1`. The backend validates the fixed v1 configuration:
-replan=24, anchor+8 history frames and stride=25. It captures the union of genuine native frames needed by future replans,
-and sends `_vpp2_history_native_step` as the absolute per-environment action index.
+Use the matching VPP2 backend from the paired PR; no separate version handshake
+is performed. The backend validates replan=24, anchor+8 history frames and
+stride=25 when it receives native-indexed observations. The client captures the
+union of genuine frames needed by future replans and sends
+`_vpp2_history_native_step` as the absolute per-environment action index.
 The server must preserve that index through virtual client/environment IDs.
-Missing required history, duplicate frames, changed execution lengths and protocol
-mismatches raise errors. Reset is required before changing an environment's
+Missing required history, duplicate frames, changed execution lengths and invalid history
+configuration raise errors. Reset is required before changing an environment's
 recording mode. RGB channels, resolution, physics, controls and model math do not
 change; omitted camera reads still run the original finite/PhysX guards.
 
