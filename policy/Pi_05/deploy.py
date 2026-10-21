@@ -13,9 +13,6 @@ def eval_one_episode(TASK_ENV, model_client):
             if TASK_ENV.is_episode_end() or action_idx + 1 == len(actions):
                 break
 
-            obs = TASK_ENV.get_obs()
-            model_client.call(func_name="update_obs", obs=obs)
-
 def eval_one_episode_batch(TASK_ENV, model_client):
 
     model_client.call(func_name="reset")
@@ -39,4 +36,3 @@ def eval_one_episode_batch(TASK_ENV, model_client):
 
             actions = [actions[i] for i in active_batch_idx] # Get the active action list
             env_idx_list = [env_idx_list[i] for i in active_batch_idx] # Get the active environment index list
-            model_client.call(func_name="update_obs_batch", obs=TASK_ENV.get_obs_batch(env_idx_list)) # Update the observation
