@@ -52,5 +52,10 @@ def eval_one_episode_batch(TASK_ENV, model_client):
             actions = [actions[i] for i in active_batch_idx]
             env_idx_list = [env_idx_list[i] for i in active_batch_idx]
             if _chunk_boundary_obs_only():
+                # Keep the official per-step video cadence without uploading
+                # intermediate observations the policy never reads.
+                stream = getattr(TASK_ENV, "stream_video_batch", None)
+                if stream is not None:
+                    stream(env_idx_list)
                 continue
             model_client.call(func_name="update_obs_batch", obs=TASK_ENV.get_obs_batch(env_idx_list))
