@@ -103,3 +103,16 @@ bash eval.sh RoboDojo stack_bowls New_OpenWAM_RoboDojo_SFT_60k arx_x5 ee 0 0 0 \
 | `OPENWAM_ALLOW_DUMMY_POLICY` | Debug-only: skip checkpoint load and return hold-position chunks. |
 
 `eval_batch: true` stacks every running env into one `engine.generate_batch` forward. `model.py` re-forces `dit_cache` / `compile` / `decode_video` off and `inference_mode=sync`. `device: cuda` loads Wan, UMT5-XXL, and ActionDiT on GPU, matching official OpenWAM deploy.
+
+### Observation cadence
+
+The synchronous client captures and sends one fresh observation per environment
+at each replan boundary, then executes the returned chunk without intermediate
+observation RPCs. The model stores only the latest observation and has no
+observation history queue, so discarded intermediate updates do not condition
+inference. The executable chunk length (including `replan_steps`) determines
+the cadence; it is not hard-coded to four actions. Training `video_stride: 4`
+describes sampled training video frames, not the online replan interval.
+Rendering needed internally for simulation/video recording is unchanged.
+This applies to the current synchronous adapter, not an asynchronous/history
+policy. Episode termination is checked after each control action.
