@@ -1,3 +1,16 @@
+import os
+
+
+def _chunk_boundary_obs_only() -> bool:
+    """OpenWAM replans on full chunks: only the chunk-boundary observation is
+    consumed (update_obs_batch overwrites the previous one and get_action_batch
+    reads the latest frame). With OPENWAM_CHUNK_BOUNDARY_OBS=1 the per-step
+    update_obs_batch calls inside a chunk are skipped; the loop head keeps
+    capturing one observation per chunk. Video streams then record one frame
+    per chunk instead of one per action step."""
+    return os.environ.get("OPENWAM_CHUNK_BOUNDARY_OBS", "0") == "1"
+
+
 def eval_one_episode(TASK_ENV, model_client):
     model_client.call(func_name="reset")
 
@@ -38,4 +51,6 @@ def eval_one_episode_batch(TASK_ENV, model_client):
 
             actions = [actions[i] for i in active_batch_idx]
             env_idx_list = [env_idx_list[i] for i in active_batch_idx]
+            if _chunk_boundary_obs_only():
+                continue
             model_client.call(func_name="update_obs_batch", obs=TASK_ENV.get_obs_batch(env_idx_list))
