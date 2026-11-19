@@ -15,6 +15,7 @@ import sys
 import time
 
 from report_pair import outcomes, compare
+from native_resume import completed_sessions
 
 
 def main():
@@ -33,11 +34,14 @@ def main():
     p.add_argument('--overlap-preflights', action='store_true', help='One-episode validation alongside the active API arm')
     p.add_argument('--job-id', help='Existing allocation, required for overlapping validation')
     p.add_argument('--validated-preflight', type=Path, help='Reuse this completed validation with identical source/config hashes')
+    p.add_argument('--resume-from', type=Path, help='Retain only native-confirmed completed episodes from this interrupted CLI run')
     args = p.parse_args()
     if args.overlap_preflights and (not args.preflight_only or not args.job_id or not args.job_id.isdigit()):
         p.error('Overlap requires --preflight-only and an existing numeric --job-id')
     if args.validated_preflight and args.preflight_only:
         p.error('Choose a new preflight or a validated preflight to reuse')
+    if args.resume_from and (args.preflight_only or args.overlap_preflights or not args.validated_preflight):
+        p.error('Resume requires a validated formal run, without overlapping/preflight stages')
     root = args.root.resolve()
     root.mkdir(parents=True, mode=0o700, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
@@ -47,7 +51,9 @@ def main():
     if provider not in ('openai', 'anthropic', 'codex_cli'):
         raise ValueError('Unknown model transport')
     remote_policy = args.remote_root+'/code/'+args.benchmark_name+'/XPolicyLab/policy/Q0_Preview'
-    ssh = ['ssh','-F',args.ssh_config,'-o','BatchMode=yes',args.ssh_host]
+    ssh = ['ssh','-F',args.ssh_config,'-o','BatchMode=yes','-o','ControlMaster=no',
+           '-o','ControlPath=none','-o','ControlPersist=no','-o','ConnectTimeout=15','-o','ServerAliveInterval=10',
+           '-o','ServerAliveCountMax=3',args.ssh_host]
     secret = None
     if provider != 'codex_cli':
         if args.key_file is None:
@@ -61,14 +67,18 @@ def main():
         agent_config_sha256=hashlib.sha256(agent_config.read_bytes()).hexdigest(),
         authentication='chatgpt_login' if provider == 'codex_cli' else 'api_key')
     (root/'transport.json').write_text(json.dumps(transport, indent=2))
+    source_root = args.resume_from.resolve() if args.resume_from else None
+    if source_root and json.loads((source_root/'transport.json').read_text()) != transport:
+        raise ValueError('Resume transport/model/configuration differs from the source run')
+    lineage = dict(source_root=str(source_root) if source_root else None, stages={})
+    (root/'transport-implementation.json').write_text(json.dumps(dict(
+        bridge_sha256=hashlib.sha256((policy/'tools/remote_agent.py').read_bytes()).hexdigest(),
+        recovery_preserves_model_inputs=True), indent=2))
     remote_env = os.environ.copy()
     remote_env.pop('Q0_PREVIEW_API_KEY', None)
     remote_env.pop('OPENAI_API_KEY', None)
 
-    def control(message):
-        message = dict(message, benchmark_name=args.benchmark_name)
-        command = shlex.join(['python3',remote_policy+'/experiments/push_t/cluster_control.py',
-                              '--root',args.remote_root])
+    def remote(command, message):
         for attempt in range(4):
             try:
                 result = subprocess.run(ssh+[command],input=json.dumps(message),text=True,
@@ -85,6 +95,12 @@ def main():
             # run name/config, and the worker still claims each request once.
             time.sleep(5*(attempt+1))
 
+    def control(message):
+        message = dict(message, benchmark_name=args.benchmark_name)
+        command = shlex.join(['python3',remote_policy+'/experiments/push_t/cluster_control.py',
+                              '--root',args.remote_root])
+        return remote(command, message)
+
     bridge = None
     active = None
 
@@ -95,6 +111,8 @@ def main():
     signal.signal(signal.SIGINT, interrupted)
     try:
         frozen = control(dict(action='freeze'))
+        if source_root and json.loads((source_root/'layouts.json').read_text()) != frozen:
+            raise ValueError('Resume frozen layouts differ from the source run')
         (root/'layouts.json').write_text(json.dumps(frozen, indent=2))
         deployment = control(dict(action='deployment', site_setup=args.site_setup))
         (root/'deployment.json').write_text(json.dumps(deployment, indent=2))
@@ -113,6 +131,28 @@ def main():
             if control(dict(action='freeze')) != frozen:
                 raise ValueError('Layouts changed between stages')
             name = root.name+'-'+label
+            inherited = []
+            if source_root:
+                complete = source_root/(label+'-result.json')
+                if complete.exists():
+                    outcomes(complete)
+                    inherited = completed_sessions(source_root, label, count)
+                    (root/(label+'-result.json')).write_bytes(complete.read_bytes())
+                    lineage['stages'][label] = dict(initial_completed=count, inherited_sessions=inherited)
+                    (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
+                    print(f'STAGE_INHERITED {label} episodes={count}', flush=True)
+                    continue
+                prior = source_root/(label+'-status.json')
+                prior_result = (json.loads(prior.read_text()).get('evaluator_result') or {}) if prior.exists() else {}
+                if prior_result.get('eval_time', 0):
+                    program = Path(__file__).with_name('native_resume.py').read_text()
+                    record = remote(shlex.join(['python3','-c',program]), dict(root=args.remote_root,
+                        benchmark_name=args.benchmark_name, source_service=source_root.name+'-'+label,
+                        target_service=name))
+                    inherited = completed_sessions(source_root, label, record['completed'])
+                    lineage['stages'][label] = dict(native=record, initial_completed=record['completed'],
+                                                    inherited_sessions=inherited)
+                    (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
             active = name
             agent_root = root/label
             env = os.environ.copy()
@@ -163,9 +203,9 @@ def main():
                 raise ValueError('Layouts changed during the stage')
             (root/(label+'-result.json')).write_text(json.dumps(result,indent=2))
             episodes = list((agent_root/'sessions').iterdir())
-            if len(episodes) != count:
+            if len(episodes)+len(inherited) != count:
                 raise ValueError(f'{label}: episode count mismatch')
-            for ep in episodes:
+            for ep in episodes+[Path(ep) for ep in inherited]:
                 for error in (ep/'errors').glob('*.json'):
                     if json.loads(error.read_text()).get('infrastructure'):
                         raise ValueError(f'{label}: Agent infrastructure failure')

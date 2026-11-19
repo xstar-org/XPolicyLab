@@ -23,22 +23,163 @@ from runtime import POLICY, config, create_run_directory
 from processes import stop
 
 
+class SSHDisconnected(ConnectionError):
+    """An SSH byte stream ended, rather than a protocol validation failure."""
+
+
+class SSHTransportTimeout(TimeoutError):
+    """A bounded pipe read/write expired, rather than local archive I/O."""
+
+
 def receive(rpc, timeout=90):
     until = time.monotonic()+timeout
     chunks, size = [], 0
     while time.monotonic() < until:
-        if not select.select([rpc.stdout], [], [], max(0, until-time.monotonic()))[0]:
+        try:
+            ready = select.select([rpc.stdout], [], [], max(0, until-time.monotonic()))[0]
+            chunk = os.read(rpc.stdout.fileno(), 1024*1024) if ready else None
+        except OSError as error:
+            raise SSHDisconnected('SSH output pipe failed') from error
+        if not ready:
             break
-        chunk = os.read(rpc.stdout.fileno(), 1024*1024)
         if not chunk:
-            raise RuntimeError('SSH bridge disconnected; see transport.stderr')
+            raise SSHDisconnected('SSH bridge disconnected; see transport.stderr')
         chunks.append(chunk)
         size += len(chunk)
         if size > 128*1024**2:
             raise ValueError('SSH response exceeds 128 MiB')
         if b'\n' in chunk:
             return json.loads(b''.join(chunks))
-    raise TimeoutError('SSH exchange stalled before a complete response')
+    raise SSHTransportTimeout('SSH exchange stalled before a complete response')
+
+
+def bridge_ssh_command(ssh_config, ssh_host, remote_command):
+    # Agent observations use their own TCP stream. Management/log RPCs may use
+    # a multiplexed connection without blocking a checkpoint image behind them.
+    return ['ssh', '-F', str(ssh_config), '-o', 'BatchMode=yes',
+            '-o', 'ControlMaster=no', '-o', 'ControlPath=none', '-o', 'ControlPersist=no',
+            '-o', 'ConnectTimeout=15', '-o', 'ConnectionAttempts=1',
+            '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=3',
+            ssh_host, remote_command]
+
+
+def send_line(rpc, message, timeout=10):
+    """Bound pipe writes as well as reads; never buffer an unbounded send."""
+    content = (json.dumps(message)+'\n').encode()
+    fd = rpc.stdin.fileno()
+    until = time.monotonic()+timeout
+    offset = 0
+    os.set_blocking(fd, False)
+    try:
+        while offset < len(content):
+            remaining = until-time.monotonic()
+            if remaining <= 0 or not select.select([], [fd], [], remaining)[1]:
+                raise SSHTransportTimeout('SSH exchange stalled while sending a request')
+            try:
+                written = os.write(fd, content[offset:])
+            except BlockingIOError:
+                continue
+            if written == 0:
+                raise SSHDisconnected('SSH input pipe closed while sending a request')
+            offset += written
+    except (SSHDisconnected, SSHTransportTimeout):
+        raise
+    except OSError as error:
+        raise SSHDisconnected('SSH input pipe failed') from error
+    finally:
+        os.set_blocking(fd, True)
+
+
+class SSHBridgeTransport:
+    """Recover the transport only, retaining the caller's live Agent state.
+
+    If an acknowledgement is lost, the identical attributed reply may be sent
+    again. The controller's accept_reply is idempotent and rejects stale IDs.
+    Validation errors deliberately bypass this recovery loop.
+    """
+    def __init__(self, command, env, log, root, remote_root, recovery_window_s=60):
+        self.command, self.env, self.log = command, env, log
+        self.root, self.remote_root = Path(root), remote_root
+        self.recovery_window_s = recovery_window_s
+        self.rpc = None
+        self.connections = self.reconnects = 0
+
+    def record(self, event, **fields):
+        value = dict(event=event, unix=time.time(), connections=self.connections,
+                     successful_reconnects=self.reconnects, **fields)
+        with (self.root/'transport-reconnects.jsonl').open('a') as file:
+            file.write(json.dumps(value)+'\n')
+        atomic(self.root/'TRANSPORT_STATE.json', value)
+
+    def close(self):
+        if self.rpc is not None:
+            stop(self.rpc, grace_seconds=2)
+            self.rpc.stdin.close()
+            self.rpc.stdout.close()
+            self.rpc = None
+
+    def connect(self, budget):
+        self.connections += 1
+        started = time.time()
+        self.rpc = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+            stderr=self.log, env=self.env, start_new_session=True)
+        hello = receive(self.rpc, timeout=min(20, budget))
+        if (not hello.get('hello') or hello.get('protocol') != PROTOCOL
+                or not started-2 <= hello['server_unix'] <= time.time()+2):
+            raise ValueError('SSH handshake protocol/clock mismatch')
+        initial = not (self.root/'BRIDGE_STARTED.json').exists()
+        if initial:
+            atomic(self.root/'BRIDGE_STARTED.json', dict(remote_root=self.remote_root, protocol=PROTOCOL))
+        else:
+            self.reconnects += 1
+        self.record('connected' if initial else 'connection_restored')
+
+    def exchange(self, message):
+        recovery_until = None
+        failure = None
+        while True:
+            budget = None if recovery_until is None else recovery_until-time.monotonic()
+            if budget is not None and budget <= 0:
+                self.record('recovery_exhausted', error=repr(failure))
+                raise TimeoutError('SSH transport recovery window exhausted') from failure
+            try:
+                if self.rpc is None:
+                    self.connect(20 if budget is None else budget)
+                budget = None if recovery_until is None else recovery_until-time.monotonic()
+                if budget is not None and budget <= 0:
+                    raise SSHTransportTimeout('SSH recovery window elapsed during connection')
+                attempt = dict(message, client_unix=time.time())
+                send_line(self.rpc, attempt, timeout=10 if budget is None else min(10,budget))
+                # A reconnect does not grant a fresh unbounded read budget.
+                budget = None if recovery_until is None else recovery_until-time.monotonic()
+                if budget is not None and budget <= 0:
+                    raise SSHTransportTimeout('SSH recovery window elapsed during connection')
+                result = receive(self.rpc, timeout=90 if budget is None else min(90,budget))
+            except (SSHDisconnected, SSHTransportTimeout) as error:
+                failure = error
+                if recovery_until is None:
+                    recovery_until = time.monotonic()+self.recovery_window_s
+                self.record('transport_lost', error=repr(error))
+                self.close()
+                remaining = recovery_until-time.monotonic()
+                if remaining > 0:
+                    self.record('reconnect_attempt', remaining_seconds=remaining)
+                    time.sleep(min(1,remaining))
+                continue
+            if (result.get('protocol') != PROTOCOL
+                    or not attempt['client_unix']-2 <= result['server_unix'] <= time.time()+2):
+                raise ValueError('Bridge protocol/clock/latency mismatch')
+            if recovery_until is not None:
+                self.record('exchange_recovered')
+            return result
+
+    def send_stop(self, known, episodes):
+        if self.rpc is not None and self.rpc.poll() is None:
+            try:
+                send_line(self.rpc, dict(protocol=PROTOCOL, client_unix=time.time(),
+                    known=known, stop_episodes=episodes), timeout=2)
+            except (OSError, TimeoutError):
+                pass
 
 
 def restore_rgb_npy(jpeg):
@@ -121,13 +262,10 @@ def main():
     (root/'sessions').mkdir()
     atomic(root/'agent_config.json', cfg)
     remote_command = shlex.join(['python3', '-u', args.remote_code, '--root', args.remote_root])
-    ssh_command = ['ssh', '-F', str(args.ssh_config), '-o', 'BatchMode=yes',
-                   '-o', 'ServerAliveInterval=15', '-o', 'ServerAliveCountMax=3',
-                   args.ssh_host, remote_command]
+    ssh_command = bridge_ssh_command(args.ssh_config, args.ssh_host, remote_command)
     ssh_env = os.environ.copy()
     ssh_env.pop(cfg['api_key_env'], None)
     children, known, sent = {}, {}, set()
-    rpc = None
 
     def interrupted(signum, frame):
         raise KeyboardInterrupt()
@@ -135,15 +273,8 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     with (root/'transport.stderr').open('w') as log:
-        connecting_at = time.time()
-        rpc = subprocess.Popen(ssh_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=log, env=ssh_env, start_new_session=True)
+        transport = SSHBridgeTransport(ssh_command, ssh_env, log, root, args.remote_root)
         try:
-            hello = receive(rpc)
-            if (not hello.get('hello') or hello.get('protocol') != PROTOCOL
-                    or not connecting_at-2 <= hello['server_unix'] <= time.time()+2):
-                raise ValueError('SSH handshake protocol/clock mismatch')
-            atomic(root/'BRIDGE_STARTED.json', dict(remote_root=args.remote_root, protocol=PROTOCOL))
             while not (root/'STOP').exists():
                 replies = []
                 for name, req_id in known.items():
@@ -156,9 +287,7 @@ def main():
                         replies.append(dict(episode=name, reply=reply))
                 message = dict(protocol=PROTOCOL, client_unix=time.time(), known=known, replies=replies,
                                compact_images=True)
-                rpc.stdin.write((json.dumps(message)+'\n').encode())
-                rpc.stdin.flush()
-                result = receive(rpc)
+                result = transport.exchange(message)
                 if (result.get('protocol') != PROTOCOL
                         or not message['client_unix']-2 <= result['server_unix'] <= time.time()+2):
                     raise ValueError('Bridge protocol/clock/latency mismatch')
@@ -212,17 +341,11 @@ def main():
             atomic(root/'BRIDGE_ERROR.json', dict(error=repr(error), unix=time.time()))
             raise
         finally:
-            if rpc.poll() is None:
-                try:
-                    rpc.stdin.write((json.dumps(dict(protocol=PROTOCOL, client_unix=time.time(),
-                        known=known, stop_episodes=list(children)))+'\n').encode())
-                    rpc.stdin.flush()
-                except (OSError, BrokenPipeError):
-                    pass
+            transport.send_stop(known, list(children))
             for name, child in children.items():
                 (root/'sessions'/name/'STOP').touch()
                 stop(child)
-            stop(rpc)
+            transport.close()
 
 
 if __name__ == '__main__':

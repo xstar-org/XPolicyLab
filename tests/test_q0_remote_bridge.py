@@ -14,10 +14,111 @@ from unittest.mock import patch
 TOOLS = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/tools'
 sys.path.insert(0, str(TOOLS))
 import bridge_exchange as bridge
-from remote_agent import import_observation, receive
+from remote_agent import import_observation, receive, SSHBridgeTransport, bridge_ssh_command
 
 
 class BridgeTests(unittest.TestCase):
+    def test_observation_transport_never_uses_the_management_master(self):
+        command = bridge_ssh_command('/private/config', 'cluster', 'python bridge.py')
+        for option in ('ControlMaster=no','ControlPath=none','ControlPersist=no',
+                       'ConnectTimeout=15','ServerAliveInterval=10','ServerAliveCountMax=3'):
+            self.assertIn(option, command)
+
+    def test_lost_reply_ack_reconnects_without_duplicate_publication_or_caller_state_change(self):
+        script = '''import json,os,sys,time
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import bridge_exchange as b
+root=Path(sys.argv[2]);marker=root/'ack-dropped.json'
+print(json.dumps(dict(hello=True,protocol=b.PROTOCOL,server_unix=time.time())),flush=True)
+for line in sys.stdin:
+ message=json.loads(line);answer=b.exchange(root,message)
+ if not marker.exists():
+  path=root/'sessions/episode_1/observations/obs_00000/reply.json'
+  marker.write_text(json.dumps(dict(reply_mtime_ns=path.stat().st_mtime_ns)))
+  os._exit(0)
+ print(json.dumps(answer),flush=True)
+'''
+        reply = {k:self.req[k] for k in bridge.IDENTITY} | {'payload':{'groups':[]}}
+        known = {'episode_1':'request_1'}
+        sent = set()
+        message = self.message(replies=[dict(episode='episode_1',reply=reply)])
+        message['known'] = known
+        before = json.dumps(message,sort_keys=True)
+        local = Path(self.temp.name)/'local-transport'
+        local.mkdir()
+        with (local/'transport.stderr').open('w') as log:
+            transport = SSHBridgeTransport([sys.executable,'-u','-c',script,str(TOOLS),str(self.root)],
+                {},log,local,str(self.root),recovery_window_s=5)
+            try:
+                result = transport.exchange(message)
+                self.assertTrue(result['replies'][0]['accepted'])
+                self.assertEqual(transport.reconnects,1)
+            finally:
+                transport.close()
+        self.assertEqual(json.dumps(message,sort_keys=True),before)
+        self.assertEqual(known, {'episode_1':'request_1'})
+        self.assertEqual(sent,set())
+        original = json.loads((self.root/'ack-dropped.json').read_text())['reply_mtime_ns']
+        self.assertEqual((self.folder/'reply.json').stat().st_mtime_ns,original)
+        self.assertEqual(json.loads((self.folder/'reply.json').read_text()),reply)
+        events = [json.loads(line)['event'] for line in (local/'transport-reconnects.jsonl').read_text().splitlines()]
+        self.assertIn('transport_lost',events)
+        self.assertIn('connection_restored',events)
+        self.assertEqual(events[-1],'exchange_recovered')
+
+    def test_protocol_json_and_clock_failures_never_reconnect(self):
+        script = '''import json,sys,time
+mode=sys.argv[1]
+print(json.dumps(dict(hello=True,protocol=1,server_unix=time.time())),flush=True)
+sys.stdin.readline()
+if mode=='json': print('invalid-json',flush=True)
+else: print(json.dumps(dict(protocol=2 if mode=='protocol' else 1,server_unix=0 if mode=='clock' else time.time())),flush=True)
+'''
+        for mode in ('protocol','json','clock'):
+            with self.subTest(mode=mode):
+                local = Path(self.temp.name)/('invalid-'+mode)
+                local.mkdir()
+                with (local/'transport.stderr').open('w') as log:
+                    transport = SSHBridgeTransport([sys.executable,'-u','-c',script,mode],{},log,local,'unused')
+                    try:
+                        with self.assertRaises(ValueError):
+                            transport.exchange(self.message())
+                        self.assertEqual(transport.connections,1)
+                    finally:
+                        transport.close()
+                events = [json.loads(line)['event'] for line in (local/'transport-reconnects.jsonl').read_text().splitlines()]
+                self.assertNotIn('reconnect_attempt',events)
+
+    def test_repeated_transport_failure_has_a_bounded_recovery_window(self):
+        script = '''import json,sys,time
+print(json.dumps(dict(hello=True,protocol=1,server_unix=time.time())),flush=True)
+sys.stdin.readline()
+'''
+        local = Path(self.temp.name)/'exhausted'
+        local.mkdir()
+        began = time.monotonic()
+        with (local/'transport.stderr').open('w') as log:
+            transport = SSHBridgeTransport([sys.executable,'-u','-c',script],{},log,local,'unused',recovery_window_s=.05)
+            try:
+                with self.assertRaisesRegex(TimeoutError,'recovery window exhausted'):
+                    transport.exchange(self.message())
+            finally:
+                transport.close()
+        self.assertLess(time.monotonic()-began,2)
+        self.assertEqual(json.loads((local/'TRANSPORT_STATE.json').read_text())['event'],'recovery_exhausted')
+
+    def test_local_archive_or_spawn_errors_are_not_transport_retries(self):
+        local = Path(self.temp.name)/'local-io-failure'
+        local.mkdir()
+        with (local/'transport.stderr').open('w') as log:
+            transport = SSHBridgeTransport(['unused'],{},log,local,'unused')
+            with patch.object(transport,'connect',side_effect=PermissionError('local archive denied')) as connect:
+                with self.assertRaises(PermissionError):
+                    transport.exchange(self.message())
+                connect.assert_called_once()
+        self.assertFalse((local/'transport-reconnects.jsonl').exists())
+
     @unittest.skipUnless(importlib.util.find_spec('numpy') and importlib.util.find_spec('cv2'), 'image dependencies required')
     def test_compact_rgb_arrays_restore_exact_published_bytes(self):
         import numpy as np
