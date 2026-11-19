@@ -197,6 +197,27 @@ automatically reuses an existing output directory.
 
 ## Local verification
 
+### Deployment validation status (2026-11-19)
+
+The Japan API host has completed a minimal Responses request using the exact
+configured model, and the isolated Bubblewrap Python tool environment imports
+its numerical and image dependencies. Transport tests validate compressed
+observation bytes and reply identity independently of the simulator.
+
+The complete RoboDojo scene currently stalls inside PhysX on its first reset
+step, before producing a policy observation. An API-free `stack_bowls` control
+reproduces the stall. No real-agent closed-loop preflight or formal 50+50 arm has
+passed. The trusted allocation helper accepts an optional `task` identifier for
+such infrastructure controls; the paired experiment remains fixed to `push_T`.
+Control episodes are excluded from all reported evaluation results.
+
+The isolated deployment uses the camera backend from the existing RoboDojo
+[PR #26](https://github.com/xstar-org/RoboDojo/pull/26) reference, and the client
+timeout forwarding from companion [PR #28](https://github.com/xstar-org/RoboDojo/pull/28).
+It leaves shared assets and environments unchanged. Startup scheduling options
+are diagnostic until the complete preflight passes; both formal arms must use
+the same frozen settings.
+
 ```bash
 python3 -m unittest discover -s tests -p 'test_q0_task_information.py' -v
 python3 -m unittest discover -s tests -p 'test_q0_pair_experiment.py' -v

@@ -16,6 +16,7 @@ export ROBODOJO_POLICY_REQUEST_TIMEOUT_S=10800
 export CUDA_VISIBLE_DEVICES=0
 unset Q0_PREVIEW_API_KEY OPENAI_API_KEY
 POLICY="$Q0_BENCH_ROOT/XPolicyLab/policy/Q0_Preview"
+task_name="${Q0_TASK_NAME:-push_T}"
 port="$(bash "$Q0_BENCH_ROOT/XPolicyLab/utils/get_free_port.sh")"
 server_pid=
 client_pid=
@@ -44,7 +45,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 setsid "$Q0_CLUSTER_PREFIX/bin/python" -u "$POLICY/tools/policy_service.py" \
-    --root "$Q0_REMOTE_RUN_DIR" --port "$port" --task push_T --seed 1 --gpu 0 \
+    --root "$Q0_REMOTE_RUN_DIR" --port "$port" --task "$task_name" --seed 1 --gpu 0 \
     --python-prefix "$Q0_CLUSTER_PREFIX" --config "$POLICY/config/agent.gpt62sol.json" \
     --external-agent &
 server_pid=$!
@@ -61,7 +62,7 @@ kit_args+=" --/app/settings/loadUserConfig=false --/app/settings/persistent=fals
 kit_args+=" --/app/userConfigPath=$Q0_REMOTE_RUN_DIR/kit-user.config.json ${Q0_SIM_KIT_ARGS:-}"
 echo "[Q0] native evaluator Kit args: $kit_args"
 setsid "$Q0_CLUSTER_PREFIX/bin/python" -u src/eval_client/main.py \
-    --task_name push_T --env_cfg_type arx_x5 --num_envs 1 --enable_cameras \
+    --task_name "$task_name" --env_cfg_type arx_x5 --num_envs 1 --enable_cameras \
     --kit_args "$kit_args" --device_id 0 --policy_name Q0_Preview --port "$port" \
     --protocol ws --policy_server_url "ws://localhost:$port" --host localhost \
     --additional_info 'ckpt_name=api,action_type=joint' --seed 1 --headless &

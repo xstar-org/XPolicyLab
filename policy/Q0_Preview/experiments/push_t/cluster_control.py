@@ -20,6 +20,9 @@ def tail(path, limit):
 def run(root, message):
     action = message['action']
     bench = root/'code/benchmark'
+    task = message.get('task', 'push_T')
+    if not isinstance(task, str) or not re.fullmatch(r'[A-Za-z0-9_]{1,64}', task):
+        raise ValueError('Invalid task name')
     if action == 'freeze':
         actual = layout_manifest(bench/'Assets/Eval_Layout/RoboDojo/arx_x5/1')
         path = root/'frozen-layouts.json'
@@ -43,6 +46,7 @@ def run(root, message):
         if mode not in ('original', 'official_only') or type(count) is not int or count not in (1, 50):
             raise ValueError('Invalid paired experiment mode/count')
         values = dict(Q0_BENCH_ROOT=str(bench), Q0_CLUSTER_PREFIX=message['cluster_prefix'],
+            Q0_TASK_NAME=task,
             Q0_REMOTE_RUN_DIR=str(service), Q0_PREVIEW_TASK_INFORMATION_MODE=mode,
             ROBODOJO_RUN_ID='q0-'+name, EVAL_NUM=str(count),
             Q0_SIM_TRACEBACK_INTERVAL_S='120' if count == 1 else '0',
@@ -72,7 +76,7 @@ def run(root, message):
     if action == 'status':
         path = root/'results'/(name+'.json')
         value = dict(worker_result=json.loads(path.read_text()) if path.exists() else None)
-        result = bench/'eval_result/RoboDojo/push_T/Q0_Preview/arx_x5/1_ckpt_name=api,action_type=joint'/('q0-'+name)/'_result.json'
+        result = bench/f'eval_result/RoboDojo/{task}/Q0_Preview/arx_x5/1_ckpt_name=api,action_type=joint'/('q0-'+name)/'_result.json'
         value['evaluator_result'] = json.loads(result.read_text()) if result.exists() else None
         log = root/'logs'/(name+'.log')
         value['log_tail'] = tail(log, 6000)
