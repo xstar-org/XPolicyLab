@@ -43,7 +43,7 @@ def episode_path(root, name):
     return path
 
 
-def snapshot(ep, req):
+def snapshot(ep, req, compact_images=False):
     if not OBSERVATION.fullmatch(req['observation_id']):
         raise ValueError('Invalid observation name')
     folder = ep/'observations'/req['observation_id']
@@ -66,8 +66,12 @@ def snapshot(ep, req):
         expected = next((item['sha256'] for item in manifest['files'].values() if item['name'] == name), digest)
         if digest != expected:
             raise ValueError('Observation hash mismatch')
-        result[name] = dict(sha256=digest, encoding='zlib', raw_bytes=len(content),
-                            data=base64.b64encode(zlib.compress(content, 3)).decode('ascii'))
+        if compact_images and name.endswith('.rgb.npy'):
+            result[name] = dict(sha256=digest, encoding='jpeg_rgb_npy', raw_bytes=len(content),
+                                source=name[:-8]+'.jpg')
+        else:
+            result[name] = dict(sha256=digest, encoding='zlib', raw_bytes=len(content),
+                                data=base64.b64encode(zlib.compress(content, 3)).decode('ascii'))
     return result
 
 
@@ -120,7 +124,7 @@ def exchange(root, message):
         status = dict(episode=meta, ready=req, end=read(ep/'END.json'), stop=(ep/'STOP').exists())
         if (req and not status['end'] and not status['stop']
                 and known.get(ep.name) != req['request_id']):
-            status['observation'] = snapshot(ep, req)
+            status['observation'] = snapshot(ep, req, compact_images=message.get('compact_images', False))
         output['episodes'][ep.name] = status
     output['service_stopped'] = (root/'STOP').exists()
     return output

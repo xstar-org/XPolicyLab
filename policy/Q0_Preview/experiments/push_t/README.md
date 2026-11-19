@@ -152,11 +152,16 @@ have older transport dependencies, install a compatible wheel into the private
 `code/overlay` directory; the controller helper uses
 `Q0_PREVIEW_CONTROLLER_PYTHONPATH` to expose it without changing shared packages.
 For reset/startup diagnostics, copy `debug_sitecustomize.py` into that private
-overlay as `sitecustomize.py`. The deployment helper enables evaluator-only
-traceback dumps in one-episode preflights and disables them in both 50-episode
-arms. The driver aborts if no policy observation arrives within 20 minutes.
+overlay as `sitecustomize.py`. Explicit one-episode diagnostic submissions can
+set `traceback_interval_s` (for example 120); regular preflights and both formal
+arms leave this instrumentation off. The driver aborts if no policy observation
+arrives within 20 minutes.
 Transport compresses files losslessly, verifies decompressed size and SHA-256,
-and never regenerates or recompresses the camera images. Failed launch cleanup
+and never recompresses camera images. To avoid transferring redundant RGB arrays,
+the API host uses the original marker-aware JPEG decoder to reconstruct their
+NPY files, then checks their original byte count and SHA-256 before publishing
+READY. Any decoder difference fails the gate instead of changing model inputs.
+Failed launch cleanup
 terminates only its own process groups, escalating after a short grace period
 so an Isaac Sim child cannot keep the GPU occupied after its shell exits.
 The allocation launcher invokes the native `src/eval_client/main.py` with the

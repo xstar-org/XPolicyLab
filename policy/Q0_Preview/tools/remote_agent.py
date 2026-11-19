@@ -6,6 +6,7 @@ the same private shared filesystem. No port forwarding or model endpoint relay.
 import argparse
 import base64
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -40,15 +41,37 @@ def receive(rpc, timeout=90):
     raise TimeoutError('SSH exchange stalled before a complete response')
 
 
+def restore_rgb_npy(jpeg):
+    # Use the benchmark's marker-aware decoder, exactly as Episode.publish does.
+    shared = Path(os.environ.get('Q0_PREVIEW_XPL_ROOT', str(POLICY.parents[2])))
+    if str(shared) not in sys.path:
+        sys.path.insert(0, str(shared))
+    import cv2
+    cv2.setNumThreads(1)
+    import numpy as np
+    from XPolicyLab.utils.process_data import decode_image_bit
+    buffer = io.BytesIO()
+    np.save(buffer, decode_image_bit(jpeg), allow_pickle=False)
+    return buffer.getvalue()
+
+
 def import_observation(ep, req, files):
     if not OBSERVATION.fullmatch(req['observation_id']):
         raise ValueError('Invalid observation name')
     folder = ep/'observations'/req['observation_id']
     folder.mkdir(parents=True, exist_ok=True)
-    for name, item in files.items():
+    # JPEG sources must be verified and written before deriving RGB arrays.
+    for name, item in sorted(files.items(), key=lambda pair: pair[1].get('encoding') == 'jpeg_rgb_npy'):
         if Path(name).name != name or name in ('.', '..'):
             raise ValueError('Invalid observation filename')
-        content = base64.b64decode(item['data'], validate=True)
+        if item.get('encoding') == 'jpeg_rgb_npy':
+            if not name.endswith('.rgb.npy') or item.get('source') != name[:-8]+'.jpg':
+                raise ValueError('Invalid RGB array source')
+            content = restore_rgb_npy((folder/item['source']).read_bytes())
+            if len(content) != item.get('raw_bytes') or len(content) > 32*1024**2:
+                raise ValueError('Reconstructed RGB array size mismatch')
+        else:
+            content = base64.b64decode(item['data'], validate=True)
         if item.get('encoding') == 'zlib':
             expected = item.get('raw_bytes')
             if type(expected) is not int or not 0 <= expected <= 32*1024**2:
@@ -60,7 +83,7 @@ def import_observation(ep, req, files):
                 raise ValueError('Invalid compressed observation') from error
             if len(content) != expected or not decoder.eof or decoder.unused_data:
                 raise ValueError('Compressed observation size mismatch')
-        elif item.get('encoding') not in (None, 'base64'):
+        elif item.get('encoding') not in (None, 'base64', 'jpeg_rgb_npy'):
             raise ValueError('Unknown observation encoding')
         if hashlib.sha256(content).hexdigest() != item['sha256']:
             raise ValueError('Transferred observation hash mismatch')
@@ -131,7 +154,8 @@ def main():
                         if any(reply.get(k) != req.get(k) for k in IDENTITY):
                             raise ValueError('Local reply attribution mismatch')
                         replies.append(dict(episode=name, reply=reply))
-                message = dict(protocol=PROTOCOL, client_unix=time.time(), known=known, replies=replies)
+                message = dict(protocol=PROTOCOL, client_unix=time.time(), known=known, replies=replies,
+                               compact_images=True)
                 rpc.stdin.write((json.dumps(message)+'\n').encode())
                 rpc.stdin.flush()
                 result = receive(rpc)

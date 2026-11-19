@@ -45,11 +45,14 @@ def run(root, message):
         mode, count = message['mode'], message['episodes']
         if mode not in ('original', 'official_only') or type(count) is not int or count not in (1, 50):
             raise ValueError('Invalid paired experiment mode/count')
+        interval = message.get('traceback_interval_s', 0)
+        if type(interval) is not int or not 0 <= interval <= 3600 or (count == 50 and interval):
+            raise ValueError('Traceback diagnostics are limited to one-episode controls')
         values = dict(Q0_BENCH_ROOT=str(bench), Q0_CLUSTER_PREFIX=message['cluster_prefix'],
             Q0_TASK_NAME=task,
             Q0_REMOTE_RUN_DIR=str(service), Q0_PREVIEW_TASK_INFORMATION_MODE=mode,
             ROBODOJO_RUN_ID='q0-'+name, EVAL_NUM=str(count),
-            Q0_SIM_TRACEBACK_INTERVAL_S='120' if count == 1 else '0',
+            Q0_SIM_TRACEBACK_INTERVAL_S=str(interval),
             Q0_PREVIEW_CONTROLLER_PYTHONPATH=str(root/'code/overlay'))
         lines = ['#!/bin/bash -l', 'set -euo pipefail', 'umask 077',
                  'source '+shlex.quote(message['site_setup'])]
