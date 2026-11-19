@@ -46,7 +46,8 @@ def main():
     overrides=[f'port={args.port}',f'host={args.host}','bench_name=RoboDojo',f'task_name={args.task}',
         'ckpt_name=api','env_cfg_type=arx_x5',f'seed={args.seed}',f'policy_name={POLICY.name}',
         'action_type=joint',f'run_root={internal}',f'max_plans={args.plans}',
-        f'wall_seconds={args.wall_seconds}',f'turn_seconds={args.turn_seconds}',f'checkpoint_seconds={args.checkpoint_seconds}']
+        f'wall_seconds={args.wall_seconds}',f'turn_seconds={args.turn_seconds}',f'checkpoint_seconds={args.checkpoint_seconds}',
+        f'task_information_mode={cfg["task_information_mode"]}']
     env=os.environ.copy()
     env.pop(cfg['api_key_env'], None)
     env.update(PYTHONDONTWRITEBYTECODE='1', OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='4',

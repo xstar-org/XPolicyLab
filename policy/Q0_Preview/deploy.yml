@@ -10,6 +10,7 @@ seed: null
 action_type: null
 gpu_id: null
 eval_batch: false
+task_information_mode: original
 run_root: null
 max_plans: 100
 wall_seconds: 10800

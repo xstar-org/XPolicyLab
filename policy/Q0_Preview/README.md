@@ -71,6 +71,13 @@ The sandbox exposes the geometry references and current task reference under the
 
 See [Runtime configuration](INSTALLATION.md#runtime-configuration) for environment variables, output paths and configuration precedence.
 
+`task_information_mode` defaults to `original`. For the paired `push_T` experiment,
+set `Q0_PREVIEW_TASK_INFORMATION_MODE=official_only` to use only the frozen official
+description and public scoring without the task reference file. Select
+`config/agent.gpt62sol.json` for the OpenAI model substitution. See the
+[experiment protocol and Slurm launcher](experiments/push_t/README.md) for the
+50+50 layout pairing, isolation requirements and result collection.
+
 Default budgets remain:
 
 

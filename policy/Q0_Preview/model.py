@@ -23,7 +23,8 @@ class Model(ModelTemplate):
             raise ValueError('Expected dual X5 arms and scalar gripper commands')
         self.debug = os.environ.get('EVAL_ENV_TYPE') == 'debug'
         self.control_step_limit = (None if self.debug else task_step_limit(
-            self.model_cfg.get('task_name'), self.model_cfg.get('max_control_steps')))
+            self.model_cfg.get('task_name'), self.model_cfg.get('max_control_steps'),
+            mode=self.model_cfg.get('task_information_mode', 'original')))
         self.backend = self.worker = self.episode = self.obs = None
         self.fresh = False
 
