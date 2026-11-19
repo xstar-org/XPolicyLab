@@ -41,10 +41,18 @@ def config(prefix=None, template=None):
     cfg = json.loads(Path(template or POLICY/'config/agent.opus55.json').read_text())
     if any(k in cfg for k in ('api_key', 'token', 'password', 'headers')):
         raise ValueError('Use an environment variable for API credentials, never configuration literals')
-    cfg['base_url'] = os.environ.get('Q0_PREVIEW_API_BASE_URL') or cfg.get('base_url', '')
-    url = urlsplit(cfg['base_url'])
-    if url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment:
-        raise ValueError('Set Q0_PREVIEW_API_BASE_URL to a credential-free HTTPS endpoint base URL')
+    provider = cfg.get('provider')
+    if provider not in ('anthropic', 'openai', 'codex_cli'):
+        raise ValueError('Unknown model transport provider')
+    if provider == 'codex_cli':
+        if cfg.get('base_url'):
+            raise ValueError('Codex CLI uses its ChatGPT login, not an API base URL')
+        cfg['base_url'] = ''
+    else:
+        cfg['base_url'] = os.environ.get('Q0_PREVIEW_API_BASE_URL') or cfg.get('base_url', '')
+        url = urlsplit(cfg['base_url'])
+        if url.scheme != 'https' or not url.hostname or url.username or url.password or url.query or url.fragment:
+            raise ValueError('Set Q0_PREVIEW_API_BASE_URL to a credential-free HTTPS endpoint base URL')
     cfg['python_prefix'] = str(Path(prefix or cfg.get('python_prefix') or sys.prefix).resolve())
     if not (Path(cfg['python_prefix'])/'bin/python').is_file():
         raise ValueError('Agent Python prefix must contain bin/python')

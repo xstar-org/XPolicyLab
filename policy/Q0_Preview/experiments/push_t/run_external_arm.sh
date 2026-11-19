@@ -16,6 +16,7 @@ export ROBODOJO_POLICY_REQUEST_TIMEOUT_S=10800
 export CUDA_VISIBLE_DEVICES=0
 unset Q0_PREVIEW_API_KEY OPENAI_API_KEY
 POLICY="$Q0_BENCH_ROOT/XPolicyLab/policy/Q0_Preview"
+agent_config="${Q0_AGENT_CONFIG:-$POLICY/config/agent.gpt62sol.json}"
 task_name="${Q0_TASK_NAME:-push_T}"
 port="$(bash "$Q0_BENCH_ROOT/XPolicyLab/utils/get_free_port.sh")"
 server_pid=
@@ -49,7 +50,7 @@ if [[ -n "${ROBODOJO_ASSET_MIRROR_CONFIG:-}" ]]; then
 fi
 setsid "$Q0_CLUSTER_PREFIX/bin/python" -u "$POLICY/tools/policy_service.py" \
     --root "$Q0_REMOTE_RUN_DIR" --port "$port" --task "$task_name" --seed 1 --gpu 0 \
-    --python-prefix "$Q0_CLUSTER_PREFIX" --config "$POLICY/config/agent.gpt62sol.json" \
+    --python-prefix "$Q0_CLUSTER_PREFIX" --config "$agent_config" \
     --external-agent &
 server_pid=$!
 bash "$Q0_BENCH_ROOT/XPolicyLab/utils/wait_for_policy_server.sh" \

@@ -1,10 +1,14 @@
 """Trusted SSH deployment helper for this experiment's private Slurm queue."""
 import argparse
+import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shlex
+import subprocess
 import sys
+import time
 
 from freeze_layouts import layout_manifest
 
@@ -19,10 +23,28 @@ def tail(path, limit):
 
 def run(root, message):
     action = message['action']
-    bench = root/'code/benchmark'
+    benchmark_name = message.get('benchmark_name', 'benchmark')
+    if not isinstance(benchmark_name, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', benchmark_name):
+        raise ValueError('Invalid private benchmark snapshot name')
+    bench = root/'code'/benchmark_name
     task = message.get('task', 'push_T')
     if not isinstance(task, str) or not re.fullmatch(r'[A-Za-z0-9_]{1,64}', task):
         raise ValueError('Invalid task name')
+    if action == 'deployment':
+        files = {}
+        for folder, directories, names in os.walk(bench, followlinks=False):
+            directories[:] = sorted(d for d in directories if d not in
+                ('Assets', 'third_party', 'eval_result', '__pycache__', '.git'))
+            for name in sorted(names):
+                path = Path(folder)/name
+                if path.suffix in ('.py', '.sh', '.json', '.yml', '.yaml'):
+                    files[str(path.relative_to(bench))] = hashlib.sha256(path.read_bytes()).hexdigest()
+        site = Path(message['site_setup']).resolve()
+        if not site.is_relative_to((root/'code').resolve()):
+            raise ValueError('Site setup must belong to this private deployment')
+        files['site_setup'] = hashlib.sha256(site.read_bytes()).hexdigest()
+        return dict(benchmark_name=benchmark_name, file_count=len(files),
+            sha256=hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest())
     if action == 'freeze':
         actual = layout_manifest(bench/'Assets/Eval_Layout/RoboDojo/arx_x5/1')
         path = root/'frozen-layouts.json'
@@ -37,6 +59,26 @@ def run(root, message):
     if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,96}', name):
         raise ValueError('Invalid run name')
     service = root/'runs'/name
+    if action == 'launch_overlap':
+        job_id = message['job_id']
+        if not isinstance(job_id, str) or not job_id.isdigit():
+            raise ValueError('Invalid allocation identity')
+        request = json.loads((root/'requests'/(name+'.json')).read_text())
+        if request.get('validation_episodes') != 1:
+            raise ValueError('Only explicit one-episode validation may overlap')
+        marker = root/'claims'/(name+'.overlap-launch.json')
+        try:
+            with marker.open('x') as file:
+                json.dump(dict(job_id=job_id, started_unix=time.time()), file)
+        except FileExistsError:
+            if json.loads(marker.read_text())['job_id'] != job_id:
+                raise ValueError('Conflicting allocation under an existing validation name')
+            return dict(launched=name, already_launched=True)
+        with (root/'logs'/(name+'-scheduler.log')).open('x') as log:
+            child = subprocess.Popen([sys.executable, '-u', str(Path(__file__).with_name('run_overlap_validation.py')),
+                '--root', str(root), '--name', name, '--job-id', job_id], stdin=subprocess.DEVNULL,
+                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        return dict(launched=name, pid=child.pid)
     if action == 'stop':
         if service.is_dir():
             (service/'STOP').touch()
@@ -45,11 +87,17 @@ def run(root, message):
         mode, count = message['mode'], message['episodes']
         if mode not in ('original', 'official_only') or type(count) is not int or count not in (1, 50):
             raise ValueError('Invalid paired experiment mode/count')
+        if message.get('overlap_validation') and count != 1:
+            raise ValueError('Overlapping validation is limited to one episode')
         interval = message.get('traceback_interval_s', 0)
         if type(interval) is not int or not 0 <= interval <= 3600 or (count == 50 and interval):
             raise ValueError('Traceback diagnostics are limited to one-episode controls')
+        config_name = message.get('agent_config_name', 'agent.gpt62sol.json')
+        if not isinstance(config_name, str) or not re.fullmatch(r'[A-Za-z0-9_.-]+\.json', config_name):
+            raise ValueError('Invalid Agent configuration filename')
         values = dict(Q0_BENCH_ROOT=str(bench), Q0_CLUSTER_PREFIX=message['cluster_prefix'],
             Q0_TASK_NAME=task,
+            Q0_AGENT_CONFIG=str(bench/'XPolicyLab/policy/Q0_Preview/config'/config_name),
             Q0_REMOTE_RUN_DIR=str(service), Q0_PREVIEW_TASK_INFORMATION_MODE=mode,
             ROBODOJO_RUN_ID='q0-'+name, EVAL_NUM=str(count),
             Q0_SIM_TRACEBACK_INTERVAL_S=str(interval),
@@ -68,6 +116,8 @@ def run(root, message):
                 file.write(script)
         request = root/'requests'/(name+'.json')
         expected = dict(argv=['bash','-l',str(launcher)], cwd=str(root))
+        if message.get('overlap_validation'):
+            expected['validation_episodes'] = 1
         if request.exists():
             if json.loads(request.read_text()) != expected:
                 raise ValueError('Conflicting request under an existing run name')

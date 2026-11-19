@@ -4,6 +4,7 @@ Run on the API host in tmux/systemd. All credentials remain on this host.
 Any infrastructure failure stops the sequence; no automatic episode reruns.
 """
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,21 +26,47 @@ def main():
     p.add_argument('--site-setup', required=True, help='Cluster-side CUDA/compiler setup script')
     p.add_argument('--cluster-prefix', required=True)
     p.add_argument('--python-prefix', default=sys.prefix)
-    p.add_argument('--key-file', type=Path, required=True)
+    p.add_argument('--agent-config', type=Path)
+    p.add_argument('--benchmark-name', default='benchmark', help='Private code snapshot directory under remote-root/code')
+    p.add_argument('--key-file', type=Path, help='Required only for API transports; never used by Codex CLI')
+    p.add_argument('--preflight-only', action='store_true')
+    p.add_argument('--overlap-preflights', action='store_true', help='One-episode validation alongside the active API arm')
+    p.add_argument('--job-id', help='Existing allocation, required for overlapping validation')
+    p.add_argument('--validated-preflight', type=Path, help='Reuse this completed validation with identical source/config hashes')
     args = p.parse_args()
+    if args.overlap_preflights and (not args.preflight_only or not args.job_id or not args.job_id.isdigit()):
+        p.error('Overlap requires --preflight-only and an existing numeric --job-id')
+    if args.validated_preflight and args.preflight_only:
+        p.error('Choose a new preflight or a validated preflight to reuse')
     root = args.root.resolve()
     root.mkdir(parents=True, mode=0o700, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
-    remote_policy = args.remote_root+'/code/benchmark/XPolicyLab/policy/Q0_Preview'
+    agent_config = (args.agent_config or policy/'config/agent.gpt62sol.json').resolve()
+    cfg = json.loads(agent_config.read_text())
+    provider = cfg['provider']
+    if provider not in ('openai', 'anthropic', 'codex_cli'):
+        raise ValueError('Unknown model transport')
+    remote_policy = args.remote_root+'/code/'+args.benchmark_name+'/XPolicyLab/policy/Q0_Preview'
     ssh = ['ssh','-F',args.ssh_config,'-o','BatchMode=yes',args.ssh_host]
-    secret = args.key_file.read_text().strip()
-    if not secret or args.key_file.stat().st_mode & 0o077:
-        raise ValueError('API key file must be nonempty and owner-only')
+    secret = None
+    if provider != 'codex_cli':
+        if args.key_file is None:
+            raise ValueError('API transport requires --key-file')
+        secret = args.key_file.read_text().strip()
+        if not secret or args.key_file.stat().st_mode & 0o077:
+            raise ValueError('API key file must be nonempty and owner-only')
+    elif args.key_file is not None:
+        raise ValueError('Codex CLI must use ChatGPT login, not --key-file')
+    transport = dict(provider=provider, model=cfg['model'],
+        agent_config_sha256=hashlib.sha256(agent_config.read_bytes()).hexdigest(),
+        authentication='chatgpt_login' if provider == 'codex_cli' else 'api_key')
+    (root/'transport.json').write_text(json.dumps(transport, indent=2))
     remote_env = os.environ.copy()
     remote_env.pop('Q0_PREVIEW_API_KEY', None)
     remote_env.pop('OPENAI_API_KEY', None)
 
     def control(message):
+        message = dict(message, benchmark_name=args.benchmark_name)
         command = shlex.join(['python3',remote_policy+'/experiments/push_t/cluster_control.py',
                               '--root',args.remote_root])
         for attempt in range(4):
@@ -69,26 +96,47 @@ def main():
     try:
         frozen = control(dict(action='freeze'))
         (root/'layouts.json').write_text(json.dumps(frozen, indent=2))
-        for label, mode, count, smoke in [('smoke','original',1,True),('model-preflight','original',1,False),
-                                          ('original','original',50,False),('official_only','official_only',50,False)]:
+        deployment = control(dict(action='deployment', site_setup=args.site_setup))
+        (root/'deployment.json').write_text(json.dumps(deployment, indent=2))
+        validation = dict(transport=transport, layouts=frozen, deployment=deployment, remote_root=args.remote_root)
+        stages = [('smoke','original',1,True),('model-preflight','original',1,False),
+                  ('original','original',50,False),('official_only','official_only',50,False)]
+        if args.validated_preflight:
+            proof = json.loads((args.validated_preflight/'VALIDATION_PASSED.json').read_text())
+            if any(proof.get(k) != value for k, value in validation.items()):
+                raise ValueError('Validated preflight source, config or layouts differ from this deployment')
+            (root/'validation-source.json').write_text(json.dumps(dict(path=str(args.validated_preflight.resolve()), proof=proof), indent=2))
+            stages = stages[2:]
+        if args.preflight_only:
+            stages = stages[:2]
+        for label, mode, count, smoke in stages:
             if control(dict(action='freeze')) != frozen:
                 raise ValueError('Layouts changed between stages')
             name = root.name+'-'+label
             active = name
             agent_root = root/label
             env = os.environ.copy()
-            env.update(Q0_PREVIEW_API_KEY=secret, Q0_PREVIEW_TASK_INFORMATION_MODE=mode)
+            env['Q0_PREVIEW_TASK_INFORMATION_MODE'] = mode
+            if secret is None:
+                for key in ('Q0_PREVIEW_API_KEY', 'OPENAI_API_KEY', 'OPENAI_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'):
+                    env.pop(key, None)
+            else:
+                env[cfg.get('api_key_env', 'Q0_PREVIEW_API_KEY')] = secret
             cmd = [str(Path(args.python_prefix)/'bin/python'),'-u',str(policy/'tools/remote_agent.py'),
                 '--ssh-config',args.ssh_config,'--ssh-host',args.ssh_host,
                 '--remote-root',args.remote_root+'/runs/'+name,
                 '--remote-code',remote_policy+'/tools/bridge_exchange.py','--root',str(agent_root),
-                '--config',str(policy/'config/agent.gpt62sol.json'),'--python-prefix',args.python_prefix]
+                '--config',str(agent_config),'--python-prefix',args.python_prefix]
             if smoke:
                 cmd += ['--smoke','--two-group']
             with (root/(label+'-bridge.log')).open('w') as log:
                 bridge = subprocess.Popen(cmd,env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
             control(dict(action='submit',name=name,mode=mode,episodes=count,
+                         agent_config_name=agent_config.name,
+                         overlap_validation=args.overlap_preflights,
                          cluster_prefix=args.cluster_prefix,site_setup=args.site_setup))
+            if args.overlap_preflights:
+                control(dict(action='launch_overlap', name=name, job_id=args.job_id))
             print(f'STAGE_STARTED {label} episodes={count}',flush=True)
             stage_started = time.monotonic()
             while True:
@@ -132,6 +180,13 @@ def main():
                     raise ValueError('Model preflight did not complete a model-generated action group')
             print(f'STAGE_PASSED {label}',flush=True)
             active = None
+            if label == 'model-preflight':
+                if control(dict(action='deployment', site_setup=args.site_setup)) != deployment:
+                    raise ValueError('Deployment source/configuration changed during validation')
+                (root/'VALIDATION_PASSED.json').write_text(json.dumps(validation, indent=2))
+        if args.preflight_only:
+            print('PREFLIGHT_VALIDATION_COMPLETE', flush=True)
+            return
         report = compare(outcomes(root/'original-result.json'),outcomes(root/'official_only-result.json'))
         (root/'report.json').write_text(json.dumps(report,indent=2))
         print('PAIRED_EXPERIMENT_COMPLETE '+json.dumps(report),flush=True)

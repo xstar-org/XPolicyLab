@@ -40,7 +40,7 @@ def main():
     cfg=config(args.python_prefix,args.config)
     agent_env=os.environ.copy()
     agent_env.update(OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1')
-    if not args.smoke and not args.external_agent:
+    if not args.smoke and not args.external_agent and cfg['provider'] != 'codex_cli':
         if not agent_env.get(cfg['api_key_env']):
             raise RuntimeError('Missing API environment variable: '+cfg['api_key_env'])
     save(root/'agent_config.json',cfg)

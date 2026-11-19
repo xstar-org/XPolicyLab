@@ -5,6 +5,8 @@ from pathlib import Path
 import tempfile
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/experiments/push_t'
@@ -24,6 +26,52 @@ control = load('cluster_control')
 
 
 class PairTests(unittest.TestCase):
+    def test_cli_validation_has_separate_snapshot_and_single_episode_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'code').mkdir()
+            (root/'requests').mkdir()
+            request = dict(action='submit', name='cli-preflight', mode='original', episodes=1,
+                cluster_prefix='/python', site_setup='/private/site.sh',
+                benchmark_name='benchmark-cli', agent_config_name='agent.codexcli.json',
+                overlap_validation=True)
+            control.run(root, request)
+            launcher = (root/'code/launch-cli-preflight.sh').read_text()
+            self.assertIn(str(root/'code/benchmark-cli'), launcher)
+            self.assertIn('agent.codexcli.json', launcher)
+            queued = json.loads((root/'requests/cli-preflight.json').read_text())
+            self.assertEqual(queued['validation_episodes'], 1)
+            (root/'claims').mkdir()
+            (root/'logs').mkdir()
+            with patch.object(control.subprocess, 'Popen', return_value=SimpleNamespace(pid=123)) as launch:
+                control.run(root, dict(action='launch_overlap', name='cli-preflight', job_id='1234'))
+                again = control.run(root, dict(action='launch_overlap', name='cli-preflight', job_id='1234'))
+                self.assertTrue(again['already_launched'])
+                self.assertEqual(launch.call_count, 1)
+                with self.assertRaises(ValueError):
+                    control.run(root, dict(action='launch_overlap', name='cli-preflight', job_id='5678'))
+            with self.assertRaises(ValueError):
+                control.run(root, request | {'name':'not-validation', 'episodes':50})
+            self.assertFalse((root/'requests/not-validation.json').exists())
+            with self.assertRaises(ValueError):
+                control.run(root, request | {'name':'bad-snapshot','benchmark_name':'../outside'})
+
+    def test_validation_source_hash_ignores_results_but_detects_code_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bench = root/'code/benchmark-cli'
+            bench.mkdir(parents=True)
+            (bench/'eval_result').mkdir()
+            (bench/'model.py').write_text('version = 1')
+            site = root/'code/site.sh'
+            site.write_text('load compiler')
+            request = dict(action='deployment', benchmark_name='benchmark-cli', site_setup=str(site))
+            before = control.run(root, request)
+            (bench/'eval_result/result.json').write_text('{"eval_time":1}')
+            self.assertEqual(control.run(root, request), before)
+            (bench/'model.py').write_text('version = 2')
+            self.assertNotEqual(control.run(root, request), before)
+
     def test_lost_submission_ack_is_safe_to_retry(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

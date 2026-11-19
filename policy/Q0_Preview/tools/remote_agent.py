@@ -115,7 +115,7 @@ def main():
     parser.add_argument('--two-group', action='store_true')
     args = parser.parse_args()
     cfg = config(args.python_prefix, args.config)
-    if not args.smoke and not os.environ.get(cfg['api_key_env']):
+    if not args.smoke and cfg['provider'] != 'codex_cli' and not os.environ.get(cfg['api_key_env']):
         parser.error('Missing API key in local Agent environment')
     root = create_run_directory(args.root)
     (root/'sessions').mkdir()
