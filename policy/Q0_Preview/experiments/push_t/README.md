@@ -216,11 +216,15 @@ observation bytes and reply identity independently of the simulator.
 
 The first-reset PhysX stall reproduced in both `push_T` and an API-free
 `stack_bowls` control. A SHA-256-verified local material mirror removed it with
-the original scheduling defaults. The first `push_T` integration run delivered
-camera observations, acknowledged 24 control actions, completed four scripted
-motion groups, and exercised both CONTINUE and REPLAN checkpoints. Its evaluator
-process subsequently exited abnormally, so complete evaluator termination and
-the real-model gate still require validation. No formal 50+50 arm has passed.
+the original scheduling defaults. The complete `push_T` integration gate now
+passes: it delivers camera observations, completes four scripted motion groups,
+exercises both CONTINUE and REPLAN checkpoints, reaches the native 600-step
+horizon, saves three camera videos and an evaluator result, and exits with code 0.
+The real `gpt-6.2-sol` preflight has also called the isolated Python tools and
+completed model-generated motion groups with acknowledged simulator feedback.
+Its complete evaluator result remains pending; no formal 50+50 arm has passed.
+One measured observation shrank from 2,198,346 to 336,097 wire bytes (84.7%) while
+retaining byte-identical decoded arrays.
 The trusted allocation helper accepts an optional `task` identifier for such
 infrastructure controls; the paired experiment remains fixed to `push_T`.
 Control episodes are excluded from reported evaluation results.
@@ -237,6 +241,7 @@ the same frozen deployment settings.
 ```bash
 python3 -m unittest discover -s tests -p 'test_q0_task_information.py' -v
 python3 -m unittest discover -s tests -p 'test_q0_pair_experiment.py' -v
+python3 -m unittest discover -s tests -p 'test_q0_remote_bridge.py' -v
 bash -n policy/Q0_Preview/experiments/push_t/run_pair.sh
 bash -n policy/Q0_Preview/experiments/push_t/slurm_environment.sbatch
 ```
