@@ -21,11 +21,13 @@ class SwitchOrderTests(unittest.TestCase):
         root = Path(directory)
         validation = root/'validation'
         validation.mkdir()
-        cfg = root/'cli.json'
+        (root/'config').mkdir()
+        cfg = root/'config/cli.json'
         cfg.write_text(json.dumps(dict(provider='codex_cli',model='gpt-6.2-sol')))
         plan = dict(validation_root=str(validation), ssh_config='/private/ssh',ssh_host='cluster',
                     remote_root='/private/experiment',benchmark_name='benchmark-cli',agent_config=str(cfg),
-                    site_setup='/private/experiment/code/site.sh')
+                    site_setup='/private/experiment/code/site.sh',
+                    model_source_sha256=switch.model_source_hash(cfg.parents[1]))
         path = root/'plan.json'
         path.write_text(json.dumps(plan))
         proof = dict(transport=dict(provider='codex_cli',model='gpt-6.2-sol',authentication='chatgpt_login',

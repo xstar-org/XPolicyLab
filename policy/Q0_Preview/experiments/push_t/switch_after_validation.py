@@ -12,6 +12,15 @@ import subprocess
 import time
 
 
+def model_source_hash(policy):
+    files = {}
+    for folder in ('harness', 'runtime', 'tools', 'assets'):
+        for path in (policy/folder).rglob('*'):
+            if path.is_file() and '__pycache__' not in path.parts and path.suffix != '.pyc':
+                files[str(path.relative_to(policy))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--plan', type=Path, required=True)
@@ -76,6 +85,8 @@ print(json.dumps(dict(evaluator_result=json.loads(p.read_text()) if p.exists() e
                 or proof['transport']['agent_config_sha256'] != hashlib.sha256(cfg_path.read_bytes()).hexdigest()
                 or proof['remote_root'] != plan['remote_root']):
             raise ValueError('CLI validation does not match this transition')
+        if model_source_hash(cfg_path.parents[1]) != plan['model_source_sha256']:
+            raise ValueError('Local CLI model/tool source changed during validation; API was not stopped')
         deployment = control(dict(action='deployment', benchmark_name=plan['benchmark_name'], site_setup=plan['site_setup']))
         if deployment != proof['deployment'] or control(dict(action='freeze', benchmark_name=plan['benchmark_name'])) != proof['layouts']:
             raise ValueError('CLI deployment changed after validation; API service was not stopped')
