@@ -19,16 +19,25 @@ POLICY="$Q0_BENCH_ROOT/XPolicyLab/policy/Q0_Preview"
 port="$(bash "$Q0_BENCH_ROOT/XPolicyLab/utils/get_free_port.sh")"
 server_pid=
 client_pid=
+stop_group() {
+    local group_pid="$1"
+    local grace_seconds="${2:-5}"
+    kill -TERM -- "-$group_pid" 2>/dev/null || true
+    for ((attempt=0; attempt<grace_seconds; attempt++)); do
+        kill -0 -- "-$group_pid" 2>/dev/null || break
+        sleep 1
+    done
+    kill -KILL -- "-$group_pid" 2>/dev/null || true
+    wait "$group_pid" 2>/dev/null || true
+}
 cleanup() {
     trap - EXIT INT TERM
     if [[ -d "$Q0_REMOTE_RUN_DIR" ]]; then touch "$Q0_REMOTE_RUN_DIR/STOP"; fi
     if [[ -n "$client_pid" ]]; then
-        kill -TERM -- "-$client_pid" 2>/dev/null || true
-        wait "$client_pid" 2>/dev/null || true
+        stop_group "$client_pid"
     fi
     if [[ -n "$server_pid" ]]; then
-        kill -TERM -- "-$server_pid" 2>/dev/null || true
-        wait "$server_pid" 2>/dev/null || true
+        stop_group "$server_pid" 20
     fi
 }
 trap cleanup EXIT

@@ -45,6 +45,7 @@ def run(root, message):
         values = dict(Q0_BENCH_ROOT=str(bench), Q0_CLUSTER_PREFIX=message['cluster_prefix'],
             Q0_REMOTE_RUN_DIR=str(service), Q0_PREVIEW_TASK_INFORMATION_MODE=mode,
             ROBODOJO_RUN_ID='q0-'+name, EVAL_NUM=str(count),
+            Q0_SIM_TRACEBACK_INTERVAL_S='120' if count == 1 else '0',
             Q0_PREVIEW_CONTROLLER_PYTHONPATH=str(root/'code/overlay'))
         lines = ['#!/bin/bash -l', 'set -euo pipefail', 'umask 077',
                  'source '+shlex.quote(message['site_setup'])]

@@ -90,9 +90,13 @@ def main():
             control(dict(action='submit',name=name,mode=mode,episodes=count,
                          cluster_prefix=args.cluster_prefix,site_setup=args.site_setup))
             print(f'STAGE_STARTED {label} episodes={count}',flush=True)
+            stage_started = time.monotonic()
             while True:
                 if bridge.poll() not in (None,0):
                     raise RuntimeError(f'Bridge failed in {label}; see local archive')
+                if (time.monotonic()-stage_started > 1200
+                        and not list((agent_root/'sessions').glob('*/episode.json'))):
+                    raise TimeoutError('Simulator produced no policy observation in 20 minutes')
                 status = control(dict(action='status',name=name))
                 (root/(label+'-status.json')).write_text(json.dumps(status,indent=2))
                 if status['worker_result'] is not None:

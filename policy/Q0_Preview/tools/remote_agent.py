@@ -15,6 +15,7 @@ import signal
 import subprocess
 import sys
 import time
+import zlib
 
 from bridge_exchange import PROTOCOL, IDENTITY, OBSERVATION, atomic, read
 from runtime import POLICY, config, create_run_directory
@@ -48,6 +49,19 @@ def import_observation(ep, req, files):
         if Path(name).name != name or name in ('.', '..'):
             raise ValueError('Invalid observation filename')
         content = base64.b64decode(item['data'], validate=True)
+        if item.get('encoding') == 'zlib':
+            expected = item.get('raw_bytes')
+            if type(expected) is not int or not 0 <= expected <= 32*1024**2:
+                raise ValueError('Invalid decompressed observation size')
+            try:
+                decoder = zlib.decompressobj()
+                content = decoder.decompress(content, expected+1)
+            except zlib.error as error:
+                raise ValueError('Invalid compressed observation') from error
+            if len(content) != expected or not decoder.eof or decoder.unused_data:
+                raise ValueError('Compressed observation size mismatch')
+        elif item.get('encoding') not in (None, 'base64'):
+            raise ValueError('Unknown observation encoding')
         if hashlib.sha256(content).hexdigest() != item['sha256']:
             raise ValueError('Transferred observation hash mismatch')
         path = folder/name

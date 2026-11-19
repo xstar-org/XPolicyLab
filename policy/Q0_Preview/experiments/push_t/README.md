@@ -151,6 +151,14 @@ The site setup file loads existing CUDA/compiler modules. If shared environments
 have older transport dependencies, install a compatible wheel into the private
 `code/overlay` directory; the controller helper uses
 `Q0_PREVIEW_CONTROLLER_PYTHONPATH` to expose it without changing shared packages.
+For reset/startup diagnostics, copy `debug_sitecustomize.py` into that private
+overlay as `sitecustomize.py`. The deployment helper enables evaluator-only
+traceback dumps in one-episode preflights and disables them in both 50-episode
+arms. The driver aborts if no policy observation arrives within 20 minutes.
+Transport compresses files losslessly, verifies decompressed size and SHA-256,
+and never regenerates or recompresses the camera images. Failed launch cleanup
+terminates only its own process groups, escalating after a short grace period
+so an Isaac Sim child cannot keep the GPU occupied after its shell exits.
 
 ### Single-host alternative
 

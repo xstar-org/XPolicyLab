@@ -12,6 +12,7 @@ import re
 import sys
 import time
 import uuid
+import zlib
 
 PROTOCOL = 1
 IDENTITY = ('run_id', 'request_id', 'observation_id')
@@ -65,7 +66,8 @@ def snapshot(ep, req):
         expected = next((item['sha256'] for item in manifest['files'].values() if item['name'] == name), digest)
         if digest != expected:
             raise ValueError('Observation hash mismatch')
-        result[name] = dict(sha256=digest, data=base64.b64encode(content).decode('ascii'))
+        result[name] = dict(sha256=digest, encoding='zlib', raw_bytes=len(content),
+                            data=base64.b64encode(zlib.compress(content, 3)).decode('ascii'))
     return result
 
 
