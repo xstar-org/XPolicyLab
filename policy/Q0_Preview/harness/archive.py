@@ -66,19 +66,25 @@ def finalize_attempt(folder):
     folder = Path(folder)
     http = read_json(folder/'http.json', {})
     worker = read_json(folder/'transport_worker.json', {})
+    cli = read_json(folder/'cli_receipt.json', {})
     wire = next((folder/name for name in ('response.sse', 'response.wire')
                  if (folder/name).exists()), None)
-    complete = http.get('body_complete', http.get('response_complete')) is True
-    status = ('complete' if complete else 'partial' if wire and wire.stat().st_size
-              else 'no_response_received' if worker else 'not_started')
+    complete = (http.get('body_complete', http.get('response_complete')) is True
+                or cli.get('response_complete') is True)
+    status = ('native_tool_handoff' if cli.get('response_complete') is True else
+              'complete' if complete else 'partial' if wire and wire.stat().st_size
+              else 'no_response_received' if worker or cli else 'not_started')
     files = {p.name: file_record(p) for p in sorted(folder.iterdir())
              if p.is_file() and p.name != 'archive_manifest.json'}
     atomic(folder/'archive_manifest.json', {
         'version': 1, 'response_status': status, 'files': files,
-        'complete_json_response': http.get('response_complete') is True,
+        'complete_json_response': http.get('response_complete') is True or cli.get('response_complete') is True,
+        **({'transport':'codex_cli', 'native_model_response_complete':False,
+            'completion_source':'native_dynamic_tool_handoff'} if cli else {}),
         'request_matches_worker': (files.get('request.json', {}).get('sha256') == worker['request_sha256']
                                    if worker.get('request_sha256') else None),
-        'credential_redaction': 'Only an echoed transport credential is masked; see wire_capture.json.',
+        'credential_redaction': ('CLI account RPC results are excluded; native authentication files are not archived.'
+                                if cli else 'Only an echoed transport credential is masked; see wire_capture.json.'),
         'note': 'request.json is the exact submitted body. Partial/no-response records do not imply '
                 'that the provider did not process the request. Replaying inputs does not guarantee identical output.'})
 

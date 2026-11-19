@@ -34,7 +34,57 @@ It tests the effect of bundled task information, not whether the API model has
 ever encountered the benchmark during pretraining. Public scoring is retained
 because it is part of the official task specification.
 
-## API access
+## Subscription-authenticated Codex CLI
+
+The subscription transport uses `config/agent.gpt62sol.codexcli.json`, with
+`provider=codex_cli` and the same `gpt-6.2-sol` model and Q0 tool contracts.
+Run `codex login status` on the Japan host and require a ChatGPT login. It does
+not use a project API key, fall back to API billing, or send authentication to
+the simulator. The implementation was informed by
+[robot-human-pipeline-plan/free_codex.py](https://github.com/xstar-org/robot-human-pipeline-plan/blob/b9256b832fda3ce8c181878a3b865da489bae018/robot_human_pipeline/free_codex.py).
+
+Each model call runs an isolated stdio app-server with only Q0 dynamic tools.
+Original Responses history, including tool results and encrypted reasoning
+items, is injected without flattening it into user text. Only the existing Q0
+harness executes Python or robot actions. Native filesystem, shell, patch,
+browser, app, MCP and extra-agent capabilities are disabled or rejected. The
+CLI's read-only/date wrappers and an advertised but rejected `request_user_input`
+tool remain visible differences; this is functional transport compatibility,
+not a claim of identical provider prompts or deterministic model outputs.
+
+Keep the API run active until the CLI has passed its actual scene preflight.
+Prepare an independent private benchmark snapshot, then validate alongside it
+only after checking GPU memory is sufficient:
+
+```bash
+python policy/Q0_Preview/experiments/push_t/run_distributed.py \
+  --root /private/japan/cli-validation-001 \
+  --remote-root /private/cluster-experiment \
+  --benchmark-name benchmark-cli \
+  --agent-config policy/Q0_Preview/config/agent.gpt62sol.codexcli.json \
+  --ssh-config /private/ssh_config --ssh-host cluster \
+  --site-setup /private/cluster-experiment/code/site_setup.sh \
+  --cluster-prefix /absolute/cluster-python-prefix \
+  --python-prefix /absolute/japan-python-prefix \
+  --preflight-only --overlap-preflights --job-id EXISTING_ALLOCATION_ID
+```
+
+This runs one API-free integration episode and one real CLI episode, while the
+API arm continues. It writes `VALIDATION_PASSED.json` only after native results,
+real model tool calls and executed motion groups have passed the gates. It
+records hashes of the source/configuration snapshot and the layouts. The
+`stop_at_boundary.py` helper requires this CLI certificate before it can archive
+complete API results and stop that service at an episode boundary. It never
+cancels the Slurm allocation.
+
+Start the formal CLI run in a fresh root using the same launch arguments, omit
+the preflight/overlap flags, and add
+`--validated-preflight /private/japan/cli-validation-001`. Changed source,
+configuration or layout hashes invalidate reuse. Both CLI arms run all 50
+layouts with the same transport; earlier API results remain a separate pilot.
+No `--key-file` is accepted for Codex CLI.
+
+## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
 [official credit flow](https://developers.openai.com/api/docs/guides/chatgpt-api-credits)

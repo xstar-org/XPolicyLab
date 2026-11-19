@@ -1,0 +1,117 @@
+"""Subscription CLI isolation, history transport, privacy and failure attribution."""
+import copy
+import importlib
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import time
+from types import ModuleType, SimpleNamespace
+import unittest
+from unittest.mock import Mock, patch
+
+
+POLICY = Path(__file__).resolve().parents[1]/'policy/Q0_Preview'
+PACKAGE = '_q0_cli_tests'
+package = ModuleType(PACKAGE)
+package.__path__ = [str(POLICY)]
+sys.modules[PACKAGE] = package
+cli = importlib.import_module(PACKAGE+'.harness.codex_cli')
+api_module = importlib.import_module(PACKAGE+'.harness.api')
+archive = importlib.import_module(PACKAGE+'.harness.archive')
+runner = importlib.import_module(PACKAGE+'.harness.runner')
+
+
+class CodexCLITests(unittest.TestCase):
+    def test_api_credentials_and_task_identity_cannot_reach_cli(self):
+        initial = dict(OPENAI_API_KEY='do-not-inherit', OPENAI_BASE_URL='https://unused',
+                       Q0_PREVIEW_API_KEY='also-private', CODEX_API_KEY='private',
+                       CODEX_TOOL_CALL_ID='parent-identity', PATH='/usr/bin')
+        with patch.dict(os.environ, initial, clear=True):
+            env = cli.cli_environment(Path('/private/cli-home'))
+            self.assertEqual(dict(os.environ), initial)
+        for key in initial:
+            if key != 'PATH':
+                self.assertNotIn(key, env)
+        self.assertEqual(env['CODEX_HOME'], '/private/cli-home')
+
+    def test_response_history_preserves_reasoning_calls_images_and_roles(self):
+        history = [dict(role='user',content=[dict(type='input_text',text='original')]),
+                   dict(type='reasoning',encrypted_content='opaque-signed-original',summary=[]),
+                   dict(type='function_call',name='run_python',call_id='call-1',arguments='{"code":"print(1)"}'),
+                   dict(type='function_call_output',call_id='call-1',output='1'),
+                   dict(role='user',content=[dict(type='input_image',image_url='data:image/png;base64,exact'),
+                                            dict(type='input_text',text='next')])]
+        before = copy.deepcopy(history)
+        injected, turn = cli.last_user_input(history)
+        self.assertEqual(history, before)
+        self.assertEqual(injected[0], before[0] | {'type':'message'})
+        self.assertEqual(injected[1:], before[1:-1])
+        self.assertEqual(turn[0], dict(type='image',url='data:image/png;base64,exact'))
+        with self.assertRaises(ValueError):
+            cli.last_user_input(history[:-1])
+
+    def test_actual_catalog_rejects_extra_execution_or_mcp_tools(self):
+        good = dict(tools=[dict(type='namespace',name='functions',tools=[
+            dict(name='run_python'),dict(name='request_user_input')])])
+        self.assertEqual(cli.audit_tool_catalog(good, {'run_python'})['blocked_native_tools'], ['request_user_input'])
+        extra = copy.deepcopy(good)
+        extra['tools'][0]['tools'].append(dict(name='exec_command'))
+        with self.assertRaises(ValueError):
+            cli.audit_tool_catalog(extra, {'run_python'})
+        extra['tools'][0]['name'] = 'private_mcp'
+        with self.assertRaises(ValueError):
+            cli.audit_tool_catalog(extra, {'run_python'})
+        with self.assertRaises(ValueError):
+            cli.audit_tool_catalog(good, {'submit_trajectory'})
+
+    def test_account_rpc_results_and_notifications_are_not_archived(self):
+        script = '''import sys,json
+for line in sys.stdin:
+ x=json.loads(line)
+ print(json.dumps({'method':'account/updated','params':{'email':'private@example.invalid'}}),flush=True)
+ print(json.dumps({'id':x['id'],'result':{'account':{'type':'chatgpt','email':'private@example.invalid','tokens':'private-sentinel'}}}),flush=True)
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            client = cli.StdioClient([sys.executable,'-u','-c',script],os.environ.copy(),root,root,lambda:None)
+            try:
+                self.assertEqual(client.call('account/read', {})['account']['type'], 'chatgpt')
+            finally:
+                client.close()
+            self.assertEqual((root/'cli-events.jsonl').read_text(), '')
+
+    def test_cli_transport_errors_are_api_infrastructure_errors(self):
+        with tempfile.TemporaryDirectory() as directory:
+            api = api_module.API(Path(directory),dict(provider='codex_cli',model='gpt-6.2-sol'))
+            with patch.object(cli,'call_codex',side_effect=RuntimeError('catalog rejected')):
+                with self.assertRaises(api_module.APIError) as caught:
+                    api.call({}, {})
+            self.assertEqual(caught.exception.reason, 'codex_cli_transport_error')
+
+    def test_native_handoff_archive_does_not_claim_http_or_native_turn_completion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'cli_receipt.json').write_text(json.dumps(dict(response_complete=True,auth_method='chatgpt')))
+            (root/'response.json').write_text('{"status":"completed"}')
+            archive.finalize_attempt(root)
+            result = json.loads((root/'archive_manifest.json').read_text())
+            self.assertEqual(result['response_status'], 'native_tool_handoff')
+            self.assertTrue(result['complete_json_response'])
+            self.assertFalse(result['native_model_response_complete'])
+            self.assertIn('response.json',result['files'])
+
+    def test_cli_checkpoint_infrastructure_failure_cannot_be_silently_scored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for provider in ('codex_cli','openai'):
+                agent = runner.Agent.__new__(runner.Agent)
+                agent.root = Path(directory)/provider
+                agent.prepare = lambda req: []
+                agent.history = SimpleNamespace(round_id=0)
+                agent.api = SimpleNamespace(provider=provider,payload=Mock(return_value={}),
+                    call=Mock(side_effect=api_module.APIError('codex_cli_transport_error','login failed')))
+                result = agent._review(dict(observation_id='obs_00001',deadline=time.time()+60,request_id='r'))
+                self.assertEqual(result['decision'],'REPLAN')
+                error = json.loads((agent.root/'errors/obs_00001.json').read_text())
+                self.assertEqual(error.get('infrastructure',False), provider == 'codex_cli')

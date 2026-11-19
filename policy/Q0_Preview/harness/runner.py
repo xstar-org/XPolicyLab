@@ -232,7 +232,10 @@ class Agent:
                 raise ValueError('exactly one checkpoint_decision is required')
             return validate_decision(calls[0]['input'])
         except Exception as exc:
-            atomic(self.root/'errors'/(req['observation_id']+'.json'), {'request': req, 'error': repr(exc)})
+            error = {'request': req, 'error': repr(exc)}
+            if self.api.provider == 'codex_cli' and isinstance(exc, (APIError, OSError)):
+                error['infrastructure'] = True
+            atomic(self.root/'errors'/(req['observation_id']+'.json'), error)
             return {'decision': 'REPLAN', 'reason': ('checkpoint unavailable or invalid: '+str(exc))[:300]}
 
     def _respond(self, req):
