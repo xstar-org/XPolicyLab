@@ -54,7 +54,11 @@ cd "$Q0_BENCH_ROOT"
 # Use the native evaluator entrypoint with the standard launcher arguments.
 # Keep boot-time Kit options explicit; a headless deployment may need to disable
 # asynchronous rendering or pin PhysX scheduling before Kit creates its pools.
-kit_args="--enable isaacsim.replicator.behavior --enable isaacsim.sensors.camera ${Q0_SIM_KIT_ARGS:-}"
+kit_args="--enable isaacsim.replicator.behavior --enable isaacsim.sensors.camera"
+# Shared-user Kit preferences must neither affect this experiment nor be changed
+# by its diagnostics. Each service has a fresh, explicitly named settings path.
+kit_args+=" --/app/settings/loadUserConfig=false --/app/settings/persistent=false"
+kit_args+=" --/app/userConfigPath=$Q0_REMOTE_RUN_DIR/kit-user.config.json ${Q0_SIM_KIT_ARGS:-}"
 echo "[Q0] native evaluator Kit args: $kit_args"
 setsid "$Q0_CLUSTER_PREFIX/bin/python" -u src/eval_client/main.py \
     --task_name push_T --env_cfg_type arx_x5 --num_envs 1 --enable_cameras \
