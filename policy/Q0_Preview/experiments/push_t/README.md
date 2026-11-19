@@ -163,6 +163,13 @@ The allocation launcher invokes the native `src/eval_client/main.py` with the
 standard single-environment camera/WS arguments. Optional `Q0_SIM_KIT_ARGS` are
 logged and passed at Kit startup, allowing deployment diagnostics without editing
 the shared evaluator launcher. Freeze the chosen Kit settings for both arms.
+If scene initialization needs NVIDIA assets unavailable from the compute node,
+configure the companion evaluator's verified local mirror through
+`ROBODOJO_ASSET_MIRROR_CONFIG` in that site setup script. The arm launcher saves
+its byte-verification audit in the service archive. See
+[RoboDojo mirror configuration](https://github.com/xstar-org/RoboDojo/pull/28).
+Publish deployment changes atomically between runs; never overwrite a shell
+script while a process is executing it.
 
 ### Single-host alternative
 
@@ -195,28 +202,32 @@ videos and Q0 request/tool traces alongside the report. Inspect API errors and
 credit availability before restarting an interrupted run; the script never
 automatically reuses an existing output directory.
 
-## Local verification
-
-### Deployment validation status (2026-11-19)
+## Deployment validation status (2026-11-19)
 
 The Japan API host has completed a minimal Responses request using the exact
 configured model, and the isolated Bubblewrap Python tool environment imports
 its numerical and image dependencies. Transport tests validate compressed
 observation bytes and reply identity independently of the simulator.
 
-The complete RoboDojo scene currently stalls inside PhysX on its first reset
-step, before producing a policy observation. An API-free `stack_bowls` control
-reproduces the stall. No real-agent closed-loop preflight or formal 50+50 arm has
-passed. The trusted allocation helper accepts an optional `task` identifier for
-such infrastructure controls; the paired experiment remains fixed to `push_T`.
-Control episodes are excluded from all reported evaluation results.
+The first-reset PhysX stall reproduced in both `push_T` and an API-free
+`stack_bowls` control. A SHA-256-verified local material mirror removed it with
+the original scheduling defaults. The first `push_T` integration run delivered
+camera observations, acknowledged 24 control actions, completed four scripted
+motion groups, and exercised both CONTINUE and REPLAN checkpoints. Its evaluator
+process subsequently exited abnormally, so complete evaluator termination and
+the real-model gate still require validation. No formal 50+50 arm has passed.
+The trusted allocation helper accepts an optional `task` identifier for such
+infrastructure controls; the paired experiment remains fixed to `push_T`.
+Control episodes are excluded from reported evaluation results.
 
 The isolated deployment uses the camera backend from the existing RoboDojo
 [PR #26](https://github.com/xstar-org/RoboDojo/pull/26) reference, and the client
-timeout forwarding from companion [PR #28](https://github.com/xstar-org/RoboDojo/pull/28).
-It leaves shared assets and environments unchanged. Startup scheduling options
-are diagnostic until the complete preflight passes; both formal arms must use
-the same frozen settings.
+timeout forwarding and material mirror from companion
+[PR #28](https://github.com/xstar-org/RoboDojo/pull/28).
+It leaves shared assets and environments unchanged. Both formal arms must use
+the same frozen deployment settings.
+
+## Local verification
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_q0_task_information.py' -v

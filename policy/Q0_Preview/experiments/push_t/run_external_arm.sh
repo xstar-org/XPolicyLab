@@ -44,6 +44,9 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+if [[ -n "${ROBODOJO_ASSET_MIRROR_CONFIG:-}" ]]; then
+    export ROBODOJO_ASSET_MIRROR_AUDIT="$Q0_REMOTE_RUN_DIR/assets-mirror.json"
+fi
 setsid "$Q0_CLUSTER_PREFIX/bin/python" -u "$POLICY/tools/policy_service.py" \
     --root "$Q0_REMOTE_RUN_DIR" --port "$port" --task "$task_name" --seed 1 --gpu 0 \
     --python-prefix "$Q0_CLUSTER_PREFIX" --config "$POLICY/config/agent.gpt62sol.json" \
