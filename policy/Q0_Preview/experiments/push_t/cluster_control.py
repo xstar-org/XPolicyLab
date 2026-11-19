@@ -9,6 +9,14 @@ import sys
 from freeze_layouts import layout_manifest
 
 
+def tail(path, limit):
+    if not path.exists():
+        return ''
+    with path.open('rb') as file:
+        file.seek(max(0, path.stat().st_size-limit))
+        return file.read(limit).decode('utf-8', errors='replace')
+
+
 def run(root, message):
     action = message['action']
     bench = root/'code/benchmark'
@@ -43,13 +51,21 @@ def run(root, message):
         lines += ['export '+key+'='+shlex.quote(value) for key,value in values.items()]
         lines += ['exec bash '+shlex.quote(str(bench/'XPolicyLab/policy/Q0_Preview/experiments/push_t/run_external_arm.sh'))]
         launcher = root/'code'/('launch-'+name+'.sh')
-        with launcher.open('x') as file:
-            file.write('\n'.join(lines)+'\n')
+        script = '\n'.join(lines)+'\n'
+        if launcher.exists():
+            if launcher.read_text() != script:
+                raise ValueError('Conflicting launcher under an existing run name')
+        else:
+            with launcher.open('x') as file:
+                file.write(script)
         request = root/'requests'/(name+'.json')
+        expected = dict(argv=['bash','-l',str(launcher)], cwd=str(root))
         if request.exists():
-            raise ValueError('Request already exists; use a fresh run name')
+            if json.loads(request.read_text()) != expected:
+                raise ValueError('Conflicting request under an existing run name')
+            return dict(submitted=name, service_root=str(service), already_submitted=True)
         temporary = request.with_suffix('.tmp')
-        temporary.write_text(json.dumps(dict(argv=['bash','-l',str(launcher)], cwd=str(root))))
+        temporary.write_text(json.dumps(expected))
         temporary.replace(request)
         return dict(submitted=name, service_root=str(service))
     if action == 'status':
@@ -58,7 +74,9 @@ def run(root, message):
         result = bench/'eval_result/RoboDojo/push_T/Q0_Preview/arx_x5/1_ckpt_name=api,action_type=joint'/('q0-'+name)/'_result.json'
         value['evaluator_result'] = json.loads(result.read_text()) if result.exists() else None
         log = root/'logs'/(name+'.log')
-        value['log_tail'] = log.read_text(errors='replace')[-6000:] if log.exists() else ''
+        value['log_tail'] = tail(log, 6000)
+        server_log = service/'server.log'
+        value['server_log_tail'] = tail(server_log, 4000)
         return value
     raise ValueError('Unknown action')
 

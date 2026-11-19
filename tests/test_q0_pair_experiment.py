@@ -3,6 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 
 
@@ -18,9 +19,27 @@ def load(name):
 
 freeze = load('freeze_layouts')
 report = load('report_pair')
+sys.path.insert(0, str(ROOT))
+control = load('cluster_control')
 
 
 class PairTests(unittest.TestCase):
+    def test_lost_submission_ack_is_safe_to_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'code').mkdir()
+            (root/'requests').mkdir()
+            request = dict(action='submit', name='paired-test-original', mode='original', episodes=50,
+                           cluster_prefix='/python', site_setup='/private/site.sh')
+            control.run(root, request)
+            path = root/'requests/paired-test-original.json'
+            before = path.stat().st_mtime_ns
+            again = control.run(root, request)
+            self.assertTrue(again['already_submitted'])
+            self.assertEqual(path.stat().st_mtime_ns, before)
+            with self.assertRaises(ValueError):
+                control.run(root, request | {'mode':'official_only'})
+
     def test_layouts_use_numeric_order_and_detect_content_change(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

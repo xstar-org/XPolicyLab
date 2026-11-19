@@ -21,6 +21,24 @@ from runtime import POLICY, config, create_run_directory
 from processes import stop
 
 
+def receive(rpc, timeout=90):
+    until = time.monotonic()+timeout
+    chunks, size = [], 0
+    while time.monotonic() < until:
+        if not select.select([rpc.stdout], [], [], max(0, until-time.monotonic()))[0]:
+            break
+        chunk = os.read(rpc.stdout.fileno(), 1024*1024)
+        if not chunk:
+            raise RuntimeError('SSH bridge disconnected; see transport.stderr')
+        chunks.append(chunk)
+        size += len(chunk)
+        if size > 128*1024**2:
+            raise ValueError('SSH response exceeds 128 MiB')
+        if b'\n' in chunk:
+            return json.loads(b''.join(chunks))
+    raise TimeoutError('SSH exchange stalled before a complete response')
+
+
 def import_observation(ep, req, files):
     if not OBSERVATION.fullmatch(req['observation_id']):
         raise ValueError('Invalid observation name')
@@ -80,13 +98,13 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     with (root/'transport.stderr').open('w') as log:
+        connecting_at = time.time()
         rpc = subprocess.Popen(ssh_command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=log, text=True, env=ssh_env, start_new_session=True)
+            stderr=log, env=ssh_env, start_new_session=True)
         try:
-            if not select.select([rpc.stdout], [], [], 90)[0]:
-                raise TimeoutError('SSH handshake stalled for 90 seconds')
-            hello = json.loads(rpc.stdout.readline())
-            if not hello.get('hello') or hello.get('protocol') != PROTOCOL or abs(time.time()-hello['server_unix']) > 2:
+            hello = receive(rpc)
+            if (not hello.get('hello') or hello.get('protocol') != PROTOCOL
+                    or not connecting_at-2 <= hello['server_unix'] <= time.time()+2):
                 raise ValueError('SSH handshake protocol/clock mismatch')
             atomic(root/'BRIDGE_STARTED.json', dict(remote_root=args.remote_root, protocol=PROTOCOL))
             while not (root/'STOP').exists():
@@ -100,15 +118,11 @@ def main():
                             raise ValueError('Local reply attribution mismatch')
                         replies.append(dict(episode=name, reply=reply))
                 message = dict(protocol=PROTOCOL, client_unix=time.time(), known=known, replies=replies)
-                rpc.stdin.write(json.dumps(message)+'\n')
+                rpc.stdin.write((json.dumps(message)+'\n').encode())
                 rpc.stdin.flush()
-                if not select.select([rpc.stdout], [], [], 90)[0]:
-                    raise TimeoutError('SSH exchange stalled for 90 seconds')
-                line = rpc.stdout.readline()
-                if not line:
-                    raise RuntimeError('SSH bridge disconnected; see transport.stderr')
-                result = json.loads(line)
-                if result.get('protocol') != PROTOCOL or abs(time.time()-result['server_unix']) > 10:
+                result = receive(rpc)
+                if (result.get('protocol') != PROTOCOL
+                        or not message['client_unix']-2 <= result['server_unix'] <= time.time()+2):
                     raise ValueError('Bridge protocol/clock/latency mismatch')
                 for verdict in result['replies']:
                     if verdict.get('accepted'):
@@ -162,8 +176,8 @@ def main():
         finally:
             if rpc.poll() is None:
                 try:
-                    rpc.stdin.write(json.dumps(dict(protocol=PROTOCOL, client_unix=time.time(),
-                        known=known, stop_episodes=list(children)))+'\n')
+                    rpc.stdin.write((json.dumps(dict(protocol=PROTOCOL, client_unix=time.time(),
+                        known=known, stop_episodes=list(children)))+'\n').encode())
                     rpc.stdin.flush()
                 except (OSError, BrokenPipeError):
                     pass

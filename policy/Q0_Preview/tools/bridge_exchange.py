@@ -91,8 +91,10 @@ def exchange(root, message):
     if message.get('protocol') != PROTOCOL:
         raise ValueError('Unsupported bridge protocol')
     now = time.time()
-    if abs(now-message['client_unix']) > 2:
-        raise ValueError('Host clocks differ by more than two seconds')
+    # Arrival time includes network/scheduling delay. Reject future timestamps
+    # or a stalled request, rather than misclassifying ordinary latency as skew.
+    if not -2 <= now-message['client_unix'] <= 90:
+        raise ValueError('Bridge timestamp is in the future or older than 90 seconds')
     output = dict(protocol=PROTOCOL, server_unix=now, episodes={}, replies=[])
     if not root.exists():
         output['waiting_for_service'] = True

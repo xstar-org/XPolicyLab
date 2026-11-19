@@ -13,10 +13,22 @@ import unittest
 TOOLS = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/tools'
 sys.path.insert(0, str(TOOLS))
 import bridge_exchange as bridge
-from remote_agent import import_observation
+from remote_agent import import_observation, receive
 
 
 class BridgeTests(unittest.TestCase):
+    def test_partial_response_cannot_block_past_timeout(self):
+        child = subprocess.Popen([sys.executable,'-c',
+            'import sys,time; sys.stdout.write("{\\\"partial\\\":"); sys.stdout.flush(); time.sleep(10)'],
+            stdout=subprocess.PIPE)
+        try:
+            with self.assertRaises(TimeoutError):
+                receive(child, timeout=.1)
+        finally:
+            child.kill()
+            child.wait()
+            child.stdout.close()
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -87,6 +99,9 @@ class BridgeTests(unittest.TestCase):
     def test_clocks_paths_and_private_files_rejected(self):
         with self.assertRaises(ValueError):
             bridge.exchange(self.root, self.message() | {'client_unix':0})
+        # A delayed packet must not be confused with two unsynchronized clocks.
+        result = bridge.exchange(self.root, self.message() | {'client_unix':time.time()-12})
+        self.assertIn('episode_1', result['episodes'])
         with self.assertRaises(ValueError):
             bridge.episode_path(self.root, '../outside')
         manifest = json.loads((self.folder/'manifest.json').read_text())

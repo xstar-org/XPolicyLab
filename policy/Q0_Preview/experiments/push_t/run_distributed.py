@@ -42,11 +42,21 @@ def main():
     def control(message):
         command = shlex.join(['python3',remote_policy+'/experiments/push_t/cluster_control.py',
                               '--root',args.remote_root])
-        result = subprocess.run(ssh+[command],input=json.dumps(message),text=True,
-            capture_output=True,timeout=90,env=remote_env)
-        if result.returncode:
-            raise RuntimeError('Cluster control failed: '+result.stderr[-4000:])
-        return json.loads(result.stdout)
+        for attempt in range(4):
+            try:
+                result = subprocess.run(ssh+[command],input=json.dumps(message),text=True,
+                    capture_output=True,timeout=90,env=remote_env)
+            except subprocess.TimeoutExpired:
+                if attempt == 3:
+                    raise
+            else:
+                if result.returncode == 0:
+                    return json.loads(result.stdout)
+                if result.returncode != 255 or attempt == 3:
+                    raise RuntimeError('Cluster control failed: '+result.stderr[-4000:])
+            # Retry only SSH transport. Submission is idempotent for an identical
+            # run name/config, and the worker still claims each request once.
+            time.sleep(5*(attempt+1))
 
     bridge = None
     active = None
@@ -97,6 +107,8 @@ def main():
             result = status['evaluator_result']
             if not result or result.get('eval_time') != count:
                 raise ValueError(f'{label}: expected {count} completed evaluator episodes')
+            if control(dict(action='freeze')) != frozen:
+                raise ValueError('Layouts changed during the stage')
             (root/(label+'-result.json')).write_text(json.dumps(result,indent=2))
             episodes = list((agent_root/'sessions').iterdir())
             if len(episodes) != count:
