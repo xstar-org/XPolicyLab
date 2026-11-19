@@ -94,6 +94,29 @@ It preserves the native API result snapshot and launches the validated CLI
 service untouched. The transition state and the formal experiment log remain
 durable on the Japan host.
 
+### Recovering an interrupted formal run
+
+Observation transport uses a dedicated SSH TCP connection. A transient EOF or
+pipe timeout can reconnect within 60 seconds while retaining the same live
+Agent, history, observation identity and pending reply. Lost acknowledgements
+are safe to resend through the controller's existing idempotent reply check.
+Protocol, clock, hash and local-file failures still stop the run. Reconnection
+does not extend planning/checkpoint deadlines or erase infrastructure errors.
+Management RPCs use separate short-lived connections.
+
+If the bounded recovery is exhausted, retain the interrupted archive and start
+a fresh driver root with the same validated launch arguments plus
+`--resume-from /private/japan/previous-paired-run`. The source worker must be
+terminal. The trusted native resume helper verifies the official result prefix
+against its checkpoint, preserves all completed successes AND failures, and
+initializes a fresh service with only the remaining layouts. The unfinished
+episode starts from its saved initial layout; it is not counted as a failure.
+`resume-lineage.json` records native hashes and inherited policy archive paths,
+including across multiple recovery segments. Existing outcomes and videos are
+not overwritten. Changed transport/model configuration, layouts, arm identity
+or inconsistent native counters are rejected. No API pilot outcomes are imported
+into a CLI comparison.
+
 ## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
@@ -294,6 +317,14 @@ the latter succeeded under the official evaluator. Source/configuration/layout
 hashes matched before the transition. The formal CLI original-information arm
 is running, followed automatically by the official-description-only arm.
 No complete CLI 50+50 result is claimed.
+
+During the formal CLI arm, a later gateway timeout exhausted the original
+non-reconnecting bridge. Three completed outcomes remained intact. The updated
+client adds bounded reconnects and native-prefix continuation; the frozen
+simulator/model snapshot and all successful-message contents remain unchanged.
+The continuation retains those outcomes and restarts only the interrupted
+fourth episode. Transport regression tests include a real pipe disconnect after
+server-side reply publication, checking that the reply is not published twice.
 One measured observation shrank from 2,198,346 to 336,097 wire bytes (84.7%) while
 retaining byte-identical decoded arrays.
 The trusted allocation helper accepts an optional `task` identifier for such
