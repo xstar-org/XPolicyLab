@@ -90,6 +90,16 @@ print(json.dumps(dict(evaluator_result=json.loads(p.read_text()) if p.exists() e
         deployment = control(dict(action='deployment', benchmark_name=plan['benchmark_name'], site_setup=plan['site_setup']))
         if deployment != proof['deployment'] or control(dict(action='freeze', benchmark_name=plan['benchmark_name'])) != proof['layouts']:
             raise ValueError('CLI deployment changed after validation; API service was not stopped')
+        command = plan['formal_command']
+        if ('--key-file' in command or '--preflight-only' in command or '--overlap-preflights' in command
+                or '--validated-preflight' not in command):
+            raise ValueError('Formal CLI command must reuse validation without an API key or another preflight')
+        for flag, expected in [('--agent-config', str(cfg_path)), ('--validated-preflight', str(validation_root)),
+                               ('--root', plan['formal_root']), ('--benchmark-name', plan['benchmark_name'])]:
+            if flag not in command or command[command.index(flag)+1] != expected:
+                raise ValueError('Formal CLI command differs from its validated configuration')
+        if Path(plan['formal_root']).exists() or Path(plan['formal_log']).exists():
+            raise ValueError('Formal CLI archive/log must be fresh before stopping the API service')
         status = api_status()
         completed = (status.get('evaluator_result') or {}).get('eval_time', 0)
         boundary = completed if status['service_stopped'] else completed+1
@@ -129,9 +139,6 @@ print(json.dumps({'armed':True}))
         else:
             (args.plan.parent/'api-completed-before-switch.json').write_text(json.dumps(status, indent=2))
         record('API_STOPPED_AFTER_CLI_VALIDATION', completed_boundary=boundary)
-        command = plan['formal_command']
-        if '--key-file' in command or '--validated-preflight' not in command:
-            raise ValueError('Formal CLI command must reuse validation without an API key')
         record('RUNNING_CLI_PAIRED_EXPERIMENT')
         active = Path(plan['formal_root']).parent/'active-pipeline.json'
         active.write_text(json.dumps(dict(name=Path(plan['formal_root']).name,

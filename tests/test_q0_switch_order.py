@@ -65,3 +65,45 @@ class SwitchOrderTests(unittest.TestCase):
                     switch.main()
                 self.assertEqual(remote.call_count,1)
                 self.assertEqual(json.loads(remote.call_args.kwargs['input'])['action'],'deployment')
+
+    def test_successful_switch_orders_validation_boundary_and_cli_launch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,validation,path,proof = self.fixture(directory)
+            plan = json.loads(path.read_text())
+            plan.update(api_service='api-recovery',api_result_run_id='q0-original',
+                formal_root=str(root/'formal'),formal_log=str(root/'formal.log'))
+            command = ['python','driver.py','--agent-config',plan['agent_config'],
+                '--validated-preflight',str(validation),'--root',plan['formal_root'],
+                '--benchmark-name',plan['benchmark_name']]
+            plan['formal_command'] = command
+            path.write_text(json.dumps(plan))
+            (validation/'VALIDATION_PASSED.json').write_text(json.dumps(proof))
+            events = []
+            reads = 0
+
+            def run(argv, **kwargs):
+                nonlocal reads
+                if argv[0] != 'ssh':
+                    self.assertEqual(argv,command)
+                    events.append('formal_cli')
+                    return SimpleNamespace(returncode=0)
+                content = kwargs['input']
+                if content.startswith('{'):
+                    action = json.loads(content)['action']
+                    events.append(action)
+                    value = proof['deployment'] if action == 'deployment' else proof['layouts']
+                elif 'marker=' in content:
+                    events.append('arm_boundary')
+                    value = dict(armed=True)
+                else:
+                    events.append('api_status')
+                    reads += 1
+                    value = dict(evaluator_result=dict(eval_time=4 if reads == 1 else 5),
+                        service_stopped=reads > 1,worker_result=None if reads == 1 else dict(returncode=1),
+                        boundary_archive=dict(cli_validation=proof,native_result=dict(eval_time=5)))
+                return SimpleNamespace(returncode=0,stdout=json.dumps(value),stderr='')
+
+            with patch.object(sys,'argv',['switch','--plan',str(path)]), patch.object(switch.subprocess,'run',side_effect=run):
+                switch.main()
+            self.assertEqual(events,['deployment','freeze','api_status','arm_boundary','api_status','formal_cli'])
+            self.assertEqual(json.loads((root/'transition-state.json').read_text())['phase'],'CLI_PAIRED_EXPERIMENT_COMPLETE')
