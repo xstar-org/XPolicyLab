@@ -84,6 +84,16 @@ configuration or layout hashes invalidate reuse. Both CLI arms run all 50
 layouts with the same transport; earlier API results remain a separate pilot.
 No `--key-file` is accepted for Codex CLI.
 
+For unattended continuation, `switch_after_validation.py --plan /private/plan.json`
+waits for the CLI certificate, rechecks configuration/source/layout hashes, and
+only then arms the completed-episode boundary stop. Its trusted plan names the
+validation root, SSH configuration, remote snapshot/setup, API service/result
+identity, CLI config, and formal CLI argv/root/log. It contains no credentials.
+It preserves the native API result snapshot and launches the validated CLI
+50+50 command. Failed CLI validation or a changed deployment leaves the API
+service untouched. The transition state and the formal experiment log remain
+durable on the Japan host.
+
 ## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
