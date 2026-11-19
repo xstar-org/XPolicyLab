@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Run inside the Slurm allocation after loading the site's CUDA/compiler modules.
+set -euo pipefail
+umask 077
+: "${Q0_BENCH_ROOT:?Set the isolated RoboDojo workspace}"
+: "${Q0_CLUSTER_PREFIX:?Set a controller/simulator Python prefix}"
+: "${Q0_REMOTE_RUN_DIR:?Set a new controller service archive directory}"
+: "${Q0_PREVIEW_TASK_INFORMATION_MODE:?Set original or official_only}"
+: "${ROBODOJO_RUN_ID:?Set a unique evaluator run ID}"
+: "${EVAL_NUM:?Set the episode count}"
+[[ "$Q0_PREVIEW_TASK_INFORMATION_MODE" == original || "$Q0_PREVIEW_TASK_INFORMATION_MODE" == official_only ]]
+[[ ! -e "$Q0_REMOTE_RUN_DIR" ]]
+export PATH="$Q0_CLUSTER_PREFIX/bin:$PATH"
+export PYTHONPATH="${Q0_PREVIEW_CONTROLLER_PYTHONPATH:+$Q0_PREVIEW_CONTROLLER_PYTHONPATH:}$Q0_BENCH_ROOT:$Q0_BENCH_ROOT/XPolicyLab"
+export ROBODOJO_POLICY_REQUEST_TIMEOUT_S=10800
+export CUDA_VISIBLE_DEVICES=0
+unset Q0_PREVIEW_API_KEY OPENAI_API_KEY
+POLICY="$Q0_BENCH_ROOT/XPolicyLab/policy/Q0_Preview"
+port="$(bash "$Q0_BENCH_ROOT/XPolicyLab/utils/get_free_port.sh")"
+server_pid=
+client_pid=
+cleanup() {
+    trap - EXIT INT TERM
+    if [[ -d "$Q0_REMOTE_RUN_DIR" ]]; then touch "$Q0_REMOTE_RUN_DIR/STOP"; fi
+    if [[ -n "$client_pid" ]]; then
+        kill -TERM -- "-$client_pid" 2>/dev/null || true
+        wait "$client_pid" 2>/dev/null || true
+    fi
+    if [[ -n "$server_pid" ]]; then
+        kill -TERM -- "-$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+setsid "$Q0_CLUSTER_PREFIX/bin/python" -u "$POLICY/tools/policy_service.py" \
+    --root "$Q0_REMOTE_RUN_DIR" --port "$port" --task push_T --seed 1 --gpu 0 \
+    --python-prefix "$Q0_CLUSTER_PREFIX" --config "$POLICY/config/agent.gpt62sol.json" \
+    --external-agent &
+server_pid=$!
+bash "$Q0_BENCH_ROOT/XPolicyLab/utils/wait_for_policy_server.sh" \
+    localhost "$port" "$server_pid" 'Q0 controller' 1200
+cd "$Q0_BENCH_ROOT"
+setsid bash scripts/eval_policy.sh --root_dir "$Q0_BENCH_ROOT" --task_name push_T \
+    --env_cfg_type arx_x5 --device_id 0 --policy_name Q0_Preview --port "$port" \
+    --protocol ws --host localhost --eval_batch false \
+    --additional_info 'ckpt_name=api,action_type=joint' --seed 1 &
+client_pid=$!
+while kill -0 "$client_pid" 2>/dev/null; do
+    kill -0 "$server_pid" 2>/dev/null || { echo 'Controller service exited' >&2; exit 1; }
+    sleep 1
+done
+wait "$client_pid"
+client_pid=
+echo '[MAIN] external-agent eval finished'

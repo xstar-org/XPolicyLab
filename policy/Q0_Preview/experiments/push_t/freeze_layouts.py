@@ -10,9 +10,12 @@ def layout_manifest(directory):
     pattern = re.compile(r'push_T_(\d+)\.json')
     paths = sorted((p for p in directory.iterdir() if pattern.fullmatch(p.name)),
                    key=lambda p: int(pattern.fullmatch(p.name).group(1)))
-    if len(paths) != 50:
-        raise ValueError(f'Expected exactly 50 standard push_T layouts, found {len(paths)}')
-    return dict(task='push_T', seed=1, layout_count=50, layouts=[dict(
+    if len(paths) < 50:
+        raise ValueError(f'Expected at least 50 standard push_T layouts, found {len(paths)}')
+    # Native SeedManager orders numerically; EVAL_NUM=50 selects its first 50 IDs.
+    available = len(paths)
+    paths = paths[:50]
+    return dict(task='push_T', seed=1, layout_count=50, available_layout_count=available, layouts=[dict(
         layout_id=i, filename=p.name, sha256=hashlib.sha256(p.read_bytes()).hexdigest())
         for i, p in enumerate(paths)])
 

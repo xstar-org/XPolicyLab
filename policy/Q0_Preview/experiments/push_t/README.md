@@ -10,6 +10,8 @@ model's numerical result. No task success result is included in this change.
 - Standard `push_T`, `arx_x5`, joint control, evaluation seed 1, 50 episodes per arm.
 - Run `original` first, then `official_only`, in fresh services and fresh workspaces.
 - Freeze the same 50 layout files and their SHA-256 hashes before running either arm.
+  If the asset directory has more than 50 standard layouts, use the first 50 in
+  numeric order, matching native SeedManager with `EVAL_NUM=50`; do not select by outcome.
 - Keep observations, tools, robot controller, planning/checkpoint budgets, API model,
   and reasoning settings unchanged. Existing OpenAI planning/checkpoint settings
   remain `xhigh` / `low`; only task information and its prompt references change.
@@ -70,6 +72,81 @@ into `requests/NAME.json`. Results go to `results/NAME.json`; process logs go to
 Only one worker may own a root; use a new root for a new allocation.
 
 ## Launch the paired evaluation
+
+### Agent and controller on separate hosts
+
+The API host runs `tools/remote_agent.py` and its isolated CPU Python tools. The
+Slurm node runs `tools/policy_service.py --external-agent`, CuRobo and Isaac Sim.
+Only the API host receives `Q0_PREVIEW_API_KEY`. No API endpoint is proxied and no
+inbound port on the cluster is needed: the API host opens an authenticated SSH
+stdio session to `tools/bridge_exchange.py` on the cluster login host, reading
+the controller's private shared filesystem.
+
+The bridge transfers only published episode metadata, current observations,
+termination markers and attributed action/checkpoint replies. Image files remain
+byte-identical and are checked against their manifest hashes. It publishes local
+READY only after all files arrive, rejects stale/conflicting replies, checks host
+clocks after the SSH handshake, and maintains a controller heartbeat. Connection
+or Agent infrastructure failure aborts the run rather than inventing task results.
+Keep both hosts' clocks synchronized. API waits do not advance simulator actions;
+25 Hz control and motion execution stay entirely on the allocated GPU node.
+
+Example on the API host (credential already loaded into the environment):
+
+```bash
+export Q0_PREVIEW_XPL_ROOT=/absolute/path/to/benchmark-workspace
+export Q0_PREVIEW_TASK_INFORMATION_MODE=original
+python policy/Q0_Preview/tools/remote_agent.py \
+  --ssh-config /private/ssh_config --ssh-host cluster \
+  --remote-root /private/experiment/runs/original \
+  --remote-code /private/benchmark/XPolicyLab/policy/Q0_Preview/tools/bridge_exchange.py \
+  --root /private/local-agent-original \
+  --config policy/Q0_Preview/config/agent.gpt62sol.json \
+  --python-prefix /absolute/agent-python-prefix
+```
+
+Start this before the controller service. Its remote root must match the service
+run directory exactly. For the API-free integration gate add `--smoke --two-group`;
+it exercises both CONTINUE and REPLAN without a model call. Never use this scripted
+gate as a task-success measurement. In a real model preflight, omit those flags.
+
+Inside the allocation, `run_external_arm.sh` launches the controller and native
+evaluator without requiring Conda activation scripts. Set `Q0_BENCH_ROOT`,
+`Q0_CLUSTER_PREFIX`, `Q0_REMOTE_RUN_DIR`, `Q0_PREVIEW_TASK_INFORMATION_MODE`,
+`ROBODOJO_RUN_ID` and `EVAL_NUM`; load the site's CUDA/compiler environment first.
+Use one environment and enable the official camera intrinsics/extrinsics. The
+launcher explicitly removes API key variables. The normal eval.sh entry also
+accepts `Q0_PREVIEW_EXTERNAL_AGENT=1`. A controller with no bridge heartbeat for
+180 seconds stops; it never silently runs without an Agent. Use identical layouts
+and settings for both information modes and collect the same paired evaluator
+statistics described below.
+
+For unattended execution, run `run_distributed.py` on the API host inside tmux or
+a service manager. Its sequence is an API-free two-group smoke, a separate real
+model episode, 50 original episodes, then 50 official-only episodes. Preflight
+episodes are excluded from the reported comparison. Both checkpoint decisions
+must pass the smoke; the real-model episode must complete an action group before
+either 50-episode arm starts. The driver rechecks layout hashes between stages,
+stops on Agent/transport/evaluator errors, and writes `report.json` only after
+both complete evaluator results pass identity/count checks. Use a fresh output
+directory and unique basename for each attempt; it never resumes automatically.
+
+```bash
+python policy/Q0_Preview/experiments/push_t/run_distributed.py \
+  --root /private/api-host/paired-001 --remote-root /private/cluster-experiment \
+  --ssh-config /private/ssh_config --ssh-host cluster \
+  --site-setup /private/cluster-experiment/code/site_setup.sh \
+  --cluster-prefix /absolute/cluster-python-prefix \
+  --python-prefix /absolute/api-host-python-prefix \
+  --key-file /private/openai-api-key.txt
+```
+
+The site setup file loads existing CUDA/compiler modules. If shared environments
+have older transport dependencies, install a compatible wheel into the private
+`code/overlay` directory; the controller helper uses
+`Q0_PREVIEW_CONTROLLER_PYTHONPATH` to expose it without changing shared packages.
+
+### Single-host alternative
 
 Prepare an isolated RoboDojo workspace with this XPolicyLab checkout as its
 `XPolicyLab/` child. Follow Q0's [installation instructions](../../INSTALLATION.md),

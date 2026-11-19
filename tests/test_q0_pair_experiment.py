@@ -35,6 +35,16 @@ class PairTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 freeze.layout_manifest(root)
 
+    def test_extra_layouts_match_native_first_fifty_selection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for i in range(55):
+                (root/f'push_T_{i}.json').write_text(str(i))
+            value = freeze.layout_manifest(root)
+            self.assertEqual(value['available_layout_count'], 55)
+            self.assertEqual(len(value['layouts']), 50)
+            self.assertEqual(value['layouts'][-1]['filename'], 'push_T_49.json')
+
     def test_incomplete_or_ambiguous_evaluator_results_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/'result.json'
