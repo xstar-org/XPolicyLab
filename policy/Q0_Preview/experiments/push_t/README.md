@@ -280,9 +280,18 @@ the original scheduling defaults. The complete `push_T` integration gate now
 passes: it delivers camera observations, completes four scripted motion groups,
 exercises both CONTINUE and REPLAN checkpoints, reaches the native 600-step
 horizon, saves three camera videos and an evaluator result, and exits with code 0.
-The real `gpt-6.2-sol` preflight has also called the isolated Python tools and
-completed model-generated motion groups with acknowledged simulator feedback.
-Its complete evaluator result remains pending; no formal 50+50 arm has passed.
+The API `gpt-6.2-sol` preflight completed successfully under the native evaluator,
+and its original-information arm is running. A gateway disconnect interrupted
+that arm; native resume restored all completed outcomes and restarted only the
+unfinished episode. Deployment transfer and active evaluation now use separate
+SSH connections.
+
+The subscription CLI has passed actual initial-image and tool-result-image
+probes, isolated Python execution, trajectory submission and checkpoint review.
+Its independent API-free scene gate has passed, and the real CLI scene preflight
+is running alongside API evaluation. The transition watcher remains unarmed
+until this full preflight succeeds and source/configuration/layout hashes match.
+No complete CLI 50+50 result is claimed.
 One measured observation shrank from 2,198,346 to 336,097 wire bytes (84.7%) while
 retaining byte-identical decoded arrays.
 The trusted allocation helper accepts an optional `task` identifier for such
