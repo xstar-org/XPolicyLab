@@ -61,6 +61,53 @@ class NativeResumeTests(unittest.TestCase):
             with self.assertRaises(ValueError):resume.prepare(request)
             self.assertFalse((base/'q0-new-original/_result.json').exists())
 
+    def test_only_proven_failed_tail_is_excluded_without_changing_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,base,source,checkpoint,request = self.fixture(directory)
+            result=json.loads(source.read_text());result['details']['2'].update(success=False,score=0.0)
+            result.update(success_rate=1/3,score=100/3);source.write_text(json.dumps(result))
+            state=json.loads(checkpoint.read_text());state.update(details=result['details'],success_nums=1,fail_nums=2,total_score=1)
+            checkpoint.write_text(json.dumps(state));before=source.read_bytes(),checkpoint.read_bytes()
+            proof=dict(layout_id=2,infrastructure=True,archive_closed=False,error_sha256='a'*64,
+                       error_path='/private/episode/errors/obs.json',session_path='/private/episode')
+            request['exclude_infrastructure_tail']=proof
+            record=resume.prepare(request)
+            self.assertEqual(record['completed'],2)
+            self.assertEqual(record['excluded_infrastructure_tail'],proof)
+            target=json.loads((base/'q0-new-original/_result.json').read_text())
+            self.assertEqual(target['details'],{k:v for k,v in result['details'].items() if k!='2'})
+            self.assertEqual(target['success_rate'],.5)
+            self.assertFalse(target['details']['0']['success'])
+            state=json.loads((base/'_resume_q0-new-original.json').read_text())
+            self.assertEqual((state['success_nums'],state['fail_nums'],state['total_score']),(1,1,1))
+            self.assertEqual((source.read_bytes(),checkpoint.read_bytes()),before)
+            self.assertEqual(resume.prepare(request),record)
+            request['exclude_infrastructure_tail']={**proof,'layout_id':1}
+            with self.assertRaises(ValueError):resume.prepare(request)
+
+    def test_successful_tail_cannot_be_excluded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,base,source,checkpoint,request = self.fixture(directory)
+            request['exclude_infrastructure_tail']=dict(layout_id=2,infrastructure=True,
+                archive_closed=False,error_sha256='a'*64,error_path='/error',session_path='/episode')
+            with self.assertRaises(ValueError):resume.prepare(request)
+
+    def test_tail_proof_requires_unclosed_single_infrastructure_episode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            for i in range(3):
+                ep=root/'original/sessions'/str(i);ep.mkdir(parents=True)
+                (ep/'episode.json').write_text(json.dumps(dict(wall_started_unix_s=i,task='push_T',task_information_mode='original')))
+                if i<2:(ep/'END.json').write_text('{}')
+            ep=root/'original/sessions/2';(ep/'errors').mkdir()
+            with self.assertRaises(ValueError):resume.infrastructure_tail_proof(root,'original',2)
+            (ep/'errors/error.json').write_text('{"infrastructure":true}')
+            proof=resume.infrastructure_tail_proof(root,'original',2)
+            self.assertEqual(proof['layout_id'],2)
+            self.assertEqual(len(proof['error_sha256']),64)
+            (ep/'END.json').write_text('{}')
+            with self.assertRaises(ValueError):resume.infrastructure_tail_proof(root,'original',2)
+
     def test_recursive_policy_prefix_excludes_interrupted_episode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

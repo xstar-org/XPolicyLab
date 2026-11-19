@@ -324,7 +324,28 @@ def call_codex(api, payload, req):
                 api.validate_envelope(result)
                 return result
             if method == 'turn/completed':
-                raise RuntimeError('Codex completed without calling a Q0 tool')
+                turn = params.get('turn', {})
+                if turn.get('status') != 'completed' or turn.get('error') is not None:
+                    raise RuntimeError('Codex turn did not complete: '+str(turn))
+                if raw_calls:
+                    raise RuntimeError('Codex completed without delivering its Q0 tool handoff')
+                if catalog_audit is None:
+                    raise ValueError('CLI did not publish its model-visible tool catalog')
+                # A normal text-only generation is valid Responses output. The
+                # unchanged Q0 harness records "no_tool", adds its existing tool
+                # reminder, and continues under the same planning deadline.
+                result = dict(status='completed', model=api.model, output=output,
+                    source='codex_cli_completed_turn', usage=None)
+                receipt.update(response_complete=True, native_model_response_complete=True,
+                    completion_source='native_completed_turn', completed_unix=time.time(),
+                    tool_catalog=catalog_audit,
+                    differences=['Codex read-only permission/date wrappers',
+                                 'native request_user_input is advertised but rejected'])
+                atomic(folder/'cli-context-wrappers.json', wrappers)
+                atomic(folder/'response.json', result)
+                atomic(folder/'cli_receipt.json', receipt)
+                api.validate_envelope(result)
+                return result
             if method == 'error':
                 raise RuntimeError('Codex turn error: '+str(params.get('error')))
     except BaseException as error:

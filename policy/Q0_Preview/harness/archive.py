@@ -71,7 +71,8 @@ def finalize_attempt(folder):
                  if (folder/name).exists()), None)
     complete = (http.get('body_complete', http.get('response_complete')) is True
                 or cli.get('response_complete') is True)
-    status = ('native_tool_handoff' if cli.get('response_complete') is True else
+    status = ('native_completed_turn' if cli.get('response_complete') is True and cli.get('native_model_response_complete') is True else
+              'native_tool_handoff' if cli.get('response_complete') is True else
               'complete' if complete else 'partial' if wire and wire.stat().st_size
               else 'no_response_received' if worker or cli else 'not_started')
     files = {p.name: file_record(p) for p in sorted(folder.iterdir())
@@ -79,8 +80,9 @@ def finalize_attempt(folder):
     atomic(folder/'archive_manifest.json', {
         'version': 1, 'response_status': status, 'files': files,
         'complete_json_response': http.get('response_complete') is True or cli.get('response_complete') is True,
-        **({'transport':'codex_cli', 'native_model_response_complete':False,
-            'completion_source':'native_dynamic_tool_handoff'} if cli else {}),
+        **({'transport':'codex_cli',
+            'native_model_response_complete':cli.get('native_model_response_complete') is True,
+            'completion_source':cli.get('completion_source', 'native_dynamic_tool_handoff')} if cli else {}),
         'request_matches_worker': (files.get('request.json', {}).get('sha256') == worker['request_sha256']
                                    if worker.get('request_sha256') else None),
         'credential_redaction': ('CLI account RPC results are excluded; native authentication files are not archived.'

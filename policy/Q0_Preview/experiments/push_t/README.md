@@ -117,6 +117,15 @@ not overwritten. Changed transport/model configuration, layouts, arm identity
 or inconsistent native counters are rejected. No API pilot outcomes are imported
 into a CLI comparison.
 
+If native shutdown records an adapter-aborted episode as a failed result,
+`--exclude-infrastructure-tail original` (or `official_only`) requires an
+unclosed final policy archive with an explicit infrastructure-error file. It
+can remove only that single failed tail in a fresh target result, after checking
+the entire original result against its checkpoint. It preserves earlier genuine
+failures. The certificate includes the excluded layout, private error path and
+SHA-256; original result/checkpoint bytes are retained with their hashes. This is
+an explicit recovery operation, not an automatic retry of model failures.
+
 ## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
@@ -327,6 +336,16 @@ fourth episode. Transport regression tests include a real pipe disconnect after
 server-side reply publication, checking that the reply is not published twice.
 One measured observation shrank from 2,198,346 to 336,097 wire bytes (84.7%) while
 retaining byte-identical decoded arrays.
+
+The continuation reached five completed cases (four successes, one failure).
+In the sixth case the model returned a normal completed text-only answer, which
+the first CLI adapter incorrectly classified as a transport failure. The adapter
+now returns this native assistant message to the existing Q0 no-action loop,
+matching the API path without extra prompts or a reset of the planning budget.
+Failed/interrupted native turns still abort. The sixth case was interrupted by
+that adapter error and requires the audited infrastructure-tail exclusion above;
+its shutdown-generated failure is not a valid model outcome. These partial
+counts are diagnostic only; the final report still requires both arms of 50.
 The trusted allocation helper accepts an optional `task` identifier for such
 infrastructure controls; the paired experiment remains fixed to `push_T`.
 Control episodes are excluded from reported evaluation results.

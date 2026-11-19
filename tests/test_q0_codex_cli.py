@@ -24,6 +24,72 @@ runner = importlib.import_module(PACKAGE+'.harness.runner')
 
 
 class CodexCLITests(unittest.TestCase):
+    def call_with_native_events(self, root, native_events):
+        auth = root/'login'
+        auth.mkdir()
+        (auth/'auth.json').write_text('{}')
+        (auth/'auth.json').chmod(0o600)
+        expected = {'submit_trajectory'}
+        catalog = {'method':'rawResponseItem/completed', 'params':{'item':{
+            'type':'additional_tools', 'tools':[{'type':'namespace','name':'functions',
+            'tools':[dict(name=name) for name in sorted(expected | {'request_user_input'})]}]}}}
+        responses = {
+            'initialize':{}, 'account/read':dict(account=dict(type='chatgpt')),
+            'account/rateLimits/read':{},
+            'thread/start':dict(model='gpt-6.2-sol',thread=dict(id='native-test-thread')),
+            'thread/inject_items':{}, 'turn/start':{}}
+        client = SimpleNamespace(events=[catalog],call=lambda method, params: responses[method],
+            send=Mock(), receive=Mock(side_effect=native_events), close=Mock())
+        api = api_module.API(root,dict(provider='codex_cli',model='gpt-6.2-sol',codex_auth_home=str(auth)))
+        tool = dict(name='submit_trajectory',description='Q0 trajectory',schema=dict(type='object'))
+        payload = api.payload('Original Q0 system instruction',
+            [dict(role='user',content=[dict(type='input_text',text='Original observation')])],[tool])
+        req = dict(kind='plan',observation_id='obs_00000',deadline=time.time()+60)
+        with patch.object(cli.shutil,'which',return_value='/codex'), \
+                patch.object(cli,'restricted_catalog',return_value={}), \
+                patch.object(cli.subprocess,'check_output',return_value='codex-cli test'), \
+                patch.object(cli,'StdioClient',return_value=client):
+            return api, api.call(payload,req), client
+
+    def test_native_text_only_completion_returns_to_existing_no_tool_harness(self):
+        reasoning = dict(type='reasoning',summary=[],encrypted_content='opaque-original')
+        message = dict(type='message',role='assistant',status='completed',
+            content=[dict(type='output_text',text='The block remains slightly offset.')])
+        events = [dict(method='rawResponseItem/completed',params=dict(item=item))
+                  for item in (reasoning,message)]
+        events.append(dict(method='turn/completed',params=dict(turn=dict(status='completed',error=None))))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            api, response, client = self.call_with_native_events(root,events)
+            self.assertEqual(response['output'],[reasoning,message])
+            self.assertEqual(api.calls(response),[])
+            history = []
+            api.append_response(history,response)
+            self.assertEqual(history,[reasoning,message])
+            folder = root/'api/00001_plan_obs_00000/attempt_00'
+            receipt = json.loads((folder/'cli_receipt.json').read_text())
+            manifest = json.loads((folder/'archive_manifest.json').read_text())
+            self.assertTrue(receipt['native_model_response_complete'])
+            self.assertEqual(manifest['response_status'],'native_completed_turn')
+            self.assertTrue(manifest['native_model_response_complete'])
+            self.assertEqual(manifest['completion_source'],'native_completed_turn')
+            client.close.assert_called_once()
+
+    def test_failed_native_turn_and_missing_tool_handoff_still_fail_closed(self):
+        failures = [
+            [dict(method='turn/completed',params=dict(turn=dict(status='failed',error=dict(message='capacity'))))],
+            [dict(method='rawResponseItem/completed',params=dict(item=dict(type='function_call',
+                name='submit_trajectory',call_id='call-missing',arguments='{}'))),
+             dict(method='turn/completed',params=dict(turn=dict(status='completed',error=None)))]
+        ]
+        for events in failures:
+            with tempfile.TemporaryDirectory() as directory, self.subTest(events=events):
+                with self.assertRaises(api_module.APIError) as caught:
+                    self.call_with_native_events(Path(directory),events)
+                self.assertEqual(caught.exception.reason,'codex_cli_transport_error')
+                self.assertTrue('did not complete' in str(caught.exception) or
+                                'without delivering' in str(caught.exception))
+
     def test_api_credentials_and_task_identity_cannot_reach_cli(self):
         initial = dict(OPENAI_API_KEY='do-not-inherit', OPENAI_BASE_URL='https://unused',
                        Q0_PREVIEW_API_KEY='also-private', CODEX_API_KEY='private',

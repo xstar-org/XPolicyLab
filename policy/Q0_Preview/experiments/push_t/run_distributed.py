@@ -15,7 +15,7 @@ import sys
 import time
 
 from report_pair import outcomes, compare
-from native_resume import completed_sessions
+from native_resume import completed_sessions, infrastructure_tail_proof
 
 
 def main():
@@ -35,6 +35,8 @@ def main():
     p.add_argument('--job-id', help='Existing allocation, required for overlapping validation')
     p.add_argument('--validated-preflight', type=Path, help='Reuse this completed validation with identical source/config hashes')
     p.add_argument('--resume-from', type=Path, help='Retain only native-confirmed completed episodes from this interrupted CLI run')
+    p.add_argument('--exclude-infrastructure-tail', choices=['original','official_only'],
+                   help='Exclude only a proven unclosed infrastructure tail recorded as native failure')
     args = p.parse_args()
     if args.overlap_preflights and (not args.preflight_only or not args.job_id or not args.job_id.isdigit()):
         p.error('Overlap requires --preflight-only and an existing numeric --job-id')
@@ -42,6 +44,8 @@ def main():
         p.error('Choose a new preflight or a validated preflight to reuse')
     if args.resume_from and (args.preflight_only or args.overlap_preflights or not args.validated_preflight):
         p.error('Resume requires a validated formal run, without overlapping/preflight stages')
+    if args.exclude_infrastructure_tail and not args.resume_from:
+        p.error('Infrastructure exclusion requires --resume-from')
     root = args.root.resolve()
     root.mkdir(parents=True, mode=0o700, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
@@ -73,6 +77,7 @@ def main():
     lineage = dict(source_root=str(source_root) if source_root else None, stages={})
     (root/'transport-implementation.json').write_text(json.dumps(dict(
         bridge_sha256=hashlib.sha256((policy/'tools/remote_agent.py').read_bytes()).hexdigest(),
+        codex_cli_sha256=hashlib.sha256((policy/'harness/codex_cli.py').read_bytes()).hexdigest(),
         recovery_preserves_model_inputs=True), indent=2))
     remote_env = os.environ.copy()
     remote_env.pop('Q0_PREVIEW_API_KEY', None)
@@ -146,9 +151,13 @@ def main():
                 prior_result = (json.loads(prior.read_text()).get('evaluator_result') or {}) if prior.exists() else {}
                 if prior_result.get('eval_time', 0):
                     program = Path(__file__).with_name('native_resume.py').read_text()
-                    record = remote(shlex.join(['python3','-c',program]), dict(root=args.remote_root,
+                    request = dict(root=args.remote_root,
                         benchmark_name=args.benchmark_name, source_service=source_root.name+'-'+label,
-                        target_service=name))
+                        target_service=name)
+                    if args.exclude_infrastructure_tail == label:
+                        request['exclude_infrastructure_tail'] = infrastructure_tail_proof(
+                            source_root, label, prior_result['eval_time'])
+                    record = remote(shlex.join(['python3','-c',program]), request)
                     inherited = completed_sessions(source_root, label, record['completed'])
                     lineage['stages'][label] = dict(native=record, initial_completed=record['completed'],
                                                     inherited_sessions=inherited)
