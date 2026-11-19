@@ -51,10 +51,16 @@ server_pid=$!
 bash "$Q0_BENCH_ROOT/XPolicyLab/utils/wait_for_policy_server.sh" \
     localhost "$port" "$server_pid" 'Q0 controller' 1200
 cd "$Q0_BENCH_ROOT"
-setsid bash scripts/eval_policy.sh --root_dir "$Q0_BENCH_ROOT" --task_name push_T \
-    --env_cfg_type arx_x5 --device_id 0 --policy_name Q0_Preview --port "$port" \
-    --protocol ws --host localhost --eval_batch false \
-    --additional_info 'ckpt_name=api,action_type=joint' --seed 1 &
+# Use the native evaluator entrypoint with the standard launcher arguments.
+# Keep boot-time Kit options explicit; a headless deployment may need to disable
+# asynchronous rendering or pin PhysX scheduling before Kit creates its pools.
+kit_args="--enable isaacsim.replicator.behavior --enable isaacsim.sensors.camera ${Q0_SIM_KIT_ARGS:-}"
+echo "[Q0] native evaluator Kit args: $kit_args"
+setsid "$Q0_CLUSTER_PREFIX/bin/python" -u src/eval_client/main.py \
+    --task_name push_T --env_cfg_type arx_x5 --num_envs 1 --enable_cameras \
+    --kit_args "$kit_args" --device_id 0 --policy_name Q0_Preview --port "$port" \
+    --protocol ws --policy_server_url "ws://localhost:$port" --host localhost \
+    --additional_info 'ckpt_name=api,action_type=joint' --seed 1 --headless &
 client_pid=$!
 while kill -0 "$client_pid" 2>/dev/null; do
     kill -0 "$server_pid" 2>/dev/null || { echo 'Controller service exited' >&2; exit 1; }

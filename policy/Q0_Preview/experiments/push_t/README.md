@@ -159,6 +159,10 @@ Transport compresses files losslessly, verifies decompressed size and SHA-256,
 and never regenerates or recompresses the camera images. Failed launch cleanup
 terminates only its own process groups, escalating after a short grace period
 so an Isaac Sim child cannot keep the GPU occupied after its shell exits.
+The allocation launcher invokes the native `src/eval_client/main.py` with the
+standard single-environment camera/WS arguments. Optional `Q0_SIM_KIT_ARGS` are
+logged and passed at Kit startup, allowing deployment diagnostics without editing
+the shared evaluator launcher. Freeze the chosen Kit settings for both arms.
 
 ### Single-host alternative
 
