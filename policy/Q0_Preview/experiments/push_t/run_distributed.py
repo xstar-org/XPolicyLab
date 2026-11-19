@@ -15,7 +15,7 @@ import sys
 import time
 
 from report_pair import outcomes, compare
-from native_resume import completed_sessions, infrastructure_tail_proof
+from native_resume import completed_sessions, infrastructure_tail_proof, completed_prefix_proof
 
 
 def main():
@@ -35,6 +35,9 @@ def main():
     p.add_argument('--job-id', help='Existing allocation, required for overlapping validation')
     p.add_argument('--validated-preflight', type=Path, help='Reuse this completed validation with identical source/config hashes')
     p.add_argument('--resume-from', type=Path, help='Retain only native-confirmed completed episodes from this interrupted CLI run')
+    p.add_argument('--resume-benchmark-name', help='Original immutable snapshot when resuming into a new snapshot')
+    p.add_argument('--extend-completed-prefix', choices=['original','official_only'],
+                   help='Audit and extend a normally completed native 25-case prefix to the requested 50')
     p.add_argument('--exclude-infrastructure-tail', choices=['original','official_only'],
                    help='Exclude only a proven unclosed infrastructure tail recorded as native failure')
     args = p.parse_args()
@@ -46,6 +49,10 @@ def main():
         p.error('Resume requires a validated formal run, without overlapping/preflight stages')
     if args.exclude_infrastructure_tail and not args.resume_from:
         p.error('Infrastructure exclusion requires --resume-from')
+    if (args.resume_benchmark_name or args.extend_completed_prefix) and not args.resume_from:
+        p.error('Snapshot/prefix extension requires --resume-from')
+    if args.extend_completed_prefix and args.exclude_infrastructure_tail:
+        p.error('Completed extension and infrastructure exclusion are mutually exclusive')
     root = args.root.resolve()
     root.mkdir(parents=True, mode=0o700, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
@@ -154,6 +161,11 @@ def main():
                     request = dict(root=args.remote_root,
                         benchmark_name=args.benchmark_name, source_service=source_root.name+'-'+label,
                         target_service=name)
+                    if args.resume_benchmark_name:
+                        request['source_benchmark_name'] = args.resume_benchmark_name
+                    if args.extend_completed_prefix == label:
+                        request['completed_prefix_proof'] = completed_prefix_proof(
+                            source_root, label, prior_result['eval_time'])
                     if args.exclude_infrastructure_tail == label:
                         request['exclude_infrastructure_tail'] = infrastructure_tail_proof(
                             source_root, label, prior_result['eval_time'])

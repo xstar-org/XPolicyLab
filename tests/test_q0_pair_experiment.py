@@ -79,6 +79,13 @@ class PairTests(unittest.TestCase):
             (root/'requests').mkdir()
             request = dict(action='submit', name='paired-test-original', mode='original', episodes=50,
                            cluster_prefix='/python', site_setup='/private/site.sh')
+            task_config = root/'code/benchmark/task/RoboDojo/config/_task.yml'
+            task_config.parent.mkdir(parents=True)
+            task_config.write_text('tasks:\n  push_T:\n    data_source: "teleop"\n    eval_nums: 25\n')
+            with self.assertRaises(ValueError):
+                control.run(root, request)
+            self.assertFalse((root/'requests/paired-test-original.json').exists())
+            task_config.write_text(task_config.read_text().replace('eval_nums: 25','eval_nums: 50'))
             control.run(root, request)
             path = root/'requests/paired-test-original.json'
             before = path.stat().st_mtime_ns

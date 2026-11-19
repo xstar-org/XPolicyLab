@@ -89,6 +89,12 @@ def run(root, message):
             raise ValueError('Invalid paired experiment mode/count')
         if message.get('overlap_validation') and count != 1:
             raise ValueError('Overlapping validation is limited to one episode')
+        if count == 50:
+            task_config = (bench/'task/RoboDojo/config/_task.yml').read_text()
+            block = re.search(r'(?m)^  '+re.escape(task)+r':\n((?:    .*\n|\s*\n)*)', task_config)
+            configured = re.search(r'(?m)^    eval_nums:\s*(\d+)\s*$', block[1]) if block else None
+            if configured is None or int(configured[1]) != count:
+                raise ValueError('Formal run requires an explicit native task eval_nums: 50; EVAL_NUM only caps the native default')
         interval = message.get('traceback_interval_s', 0)
         if type(interval) is not int or not 0 <= interval <= 3600 or (count == 50 and interval):
             raise ValueError('Traceback diagnostics are limited to one-episode controls')

@@ -61,6 +61,59 @@ class NativeResumeTests(unittest.TestCase):
             with self.assertRaises(ValueError):resume.prepare(request)
             self.assertFalse((base/'q0-new-original/_result.json').exists())
 
+    def completed_fixture(self, directory):
+        root,base,source,checkpoint,request = self.fixture(directory)
+        details = {str(i):dict(layout_id=i,success=i>0,score=float(i>0)) for i in range(25)}
+        source.write_text(json.dumps(dict(eval_time=25,success_rate=24/25,score=96.0,details=details)))
+        checkpoint.unlink()
+        (root/'results/old-original.json').write_text('{"returncode":0}')
+        (root/'logs').mkdir()
+        (root/'logs/old-original.log').write_text('[main] removed resume manifest (eval completed)\n[MAIN] external-agent eval finished\n')
+        old = root/'code/benchmark-cli/task/RoboDojo/config/_task.yml'
+        new = root/'code/benchmark-50/task/RoboDojo/config/_task.yml'
+        old.parent.mkdir(parents=True);new.parent.mkdir(parents=True)
+        old.write_text('tasks:\n  push_T:\n    data_source: "teleop"\n    eval_nums: 25\n\n  other:\n    eval_nums: 25\n')
+        new.write_text(old.read_text().replace('eval_nums: 25','eval_nums: 50',1))
+        request.update(benchmark_name='benchmark-50',source_benchmark_name='benchmark-cli',
+            completed_prefix_proof=dict(completed=25,closed_archives_sha256='a'*64))
+        return root,base,source,checkpoint,request,new
+
+    def test_completed_default_prefix_extension_keeps_all_native_outcomes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,base,source,checkpoint,request,new=self.completed_fixture(directory)
+            before=source.read_bytes()
+            record=resume.prepare(request)
+            self.assertEqual(record['completed'],25)
+            self.assertTrue(record['checkpoint_reconstructed_after_native_completion'])
+            self.assertIsNone(record['source_checkpoint_sha256'])
+            self.assertEqual(Path(record['target_result']).read_bytes(),before)
+            self.assertEqual(source.read_bytes(),before)
+            self.assertFalse(checkpoint.exists())
+            state=json.loads((Path(record['target_result']).parent.parent/'_resume_q0-new-original.json').read_text())
+            self.assertEqual(state['completed_layout_ids'],list(range(25)))
+            self.assertEqual((state['success_nums'],state['fail_nums']),(24,1))
+            self.assertEqual(resume.prepare(request),record)
+
+    def test_completed_extension_rejects_changed_rules_and_missing_proof(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,base,source,checkpoint,request,new=self.completed_fixture(directory)
+            content=new.read_text();new.write_text(content+'# changed rules\n')
+            with self.assertRaises(ValueError):resume.prepare(request)
+            new.write_text(content)
+            proof=request.pop('completed_prefix_proof')
+            with self.assertRaises(ValueError):resume.prepare(request)
+            request['completed_prefix_proof']=proof
+            (root/'results/old-original.json').write_text('{"returncode":1}')
+            with self.assertRaises(ValueError):resume.prepare(request)
+
+    def test_completed_extension_preserves_crlf_task_config_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root,base,source,checkpoint,request,new=self.completed_fixture(directory)
+            old=root/'code/benchmark-cli/task/RoboDojo/config/_task.yml'
+            for path in (old,new):path.write_bytes(path.read_bytes().replace(b'\n',b'\r\n'))
+            record=resume.prepare(request)
+            self.assertEqual(record['completed'],25)
+
     def test_only_proven_failed_tail_is_excluded_without_changing_source(self):
         with tempfile.TemporaryDirectory() as directory:
             root,base,source,checkpoint,request = self.fixture(directory)

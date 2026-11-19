@@ -126,6 +126,28 @@ failures. The certificate includes the excluded layout, private error path and
 SHA-256; original result/checkpoint bytes are retained with their hashes. This is
 an explicit recovery operation, not an automatic retry of model failures.
 
+### Native task count and extending a completed prefix
+
+The official `push_T` task configuration defaults to **25** evaluations.
+`EVAL_NUM=50` does not override that default: the native entrypoint takes the
+minimum. A formal submission now rejects a snapshot unless its task block
+explicitly has `eval_nums: 50`. To meet this experiment's requested 50 layouts,
+create a new immutable snapshot changing only that task count, retain identical
+layout hashes, and repeat smoke/model preflight for the new deployment. Physics,
+scoring and policy inputs stay unchanged; this 50-layout experiment is an
+extension of the official default protocol, not a default leaderboard run.
+
+The first CLI segment completed all 25 native default cases (22 successes,
+3 failures) before the driver rejected the incomplete 50-case arm. Native normal
+completion deletes its checkpoint. `--extend-completed-prefix original` with
+`--resume-benchmark-name <original-snapshot>` permits an audited extension into
+the new snapshot: require normal worker exit, native completion log, all 25
+closed policy archives without infrastructure errors, exact result counters,
+and an otherwise byte-identical task configuration changing 25 to 50. Rebuild
+only the target checkpoint; keep the source result and all original outcomes
+immutable. The certificate records source/config/log/archive hashes. This flag
+cannot exclude any outcome or be combined with infrastructure-tail exclusion.
+
 ## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
