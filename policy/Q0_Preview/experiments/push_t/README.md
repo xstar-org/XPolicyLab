@@ -167,6 +167,20 @@ the source hashes and archive lineage. It never extends episode or checkpoint bu
 The singleton ownership transfer requires that direct predecessor and its native
 resume certificate; ordinary overlap checks must pass before ownership changes.
 
+After a user-requested stop releases the old allocation, resume with
+`--operator-pause-certificate` and `--released-allocation-certificate` as well as
+`--resume-from` and the newly authorized job ID. The pre-stop snapshot must prove
+which outcomes were already complete and identify exactly one interrupted tail.
+Completed genuine failures remain in the prefix. A native tail outcome can be
+excluded only when that explicit operator-interruption proof justifies it.
+
+For a shared multi-GPU allocation, supply its authorized UUID set with
+`--authorized-gpu-uuids`. The actual simulator step requests exactly one GPU;
+its guard checks single-device visibility, allocation identity, UUID membership
+and available memory before launching the frozen simulator. The effective UUID
+is recorded inside that same step. A separate probe step may receive a different
+GPU and is not evidence of the simulator's eventual binding.
+
 If the Slurm controller is unavailable while the existing allocation worker remains
 usable, add `--existing-worker-queue` to that audited resume. The request waits for
 the current original service to finish, then the worker launches it in the same
