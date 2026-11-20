@@ -148,6 +148,30 @@ only the target checkpoint; keep the source result and all original outcomes
 immutable. The certificate records source/config/log/archive hashes. This flag
 cannot exclude any outcome or be combined with infrastructure-tail exclusion.
 
+## Explicit parallel execution of the second arm
+
+The user authorized running `official_only` concurrently with `original` on the
+same allocated GPU. Each service needs its own controller/agent process groups,
+port, Kit preferences and archive root. Verify the allocation/GPU UUID, available
+GPU memory and host/cgroup memory before starting the second simulator. A second
+Slurm step uses the existing allocation with `--overlap`; never release or replace
+the allocation or stop the active original arm.
+
+An already running serial driver will otherwise submit its own official-only arm
+after the original 50 finish. `reserve_parallel_arm.py` requires explicit operator
+authorization and reserves only the still-unsubmitted serial official-only launcher.
+The existing immutable-launcher check then rejects that duplicate **before queueing**.
+It does not stop either active service. The old serial driver saves the complete
+original result first, then is expected to exit at that duplicate-submission guard.
+This administrative exit is separate from native episode outcomes.
+
+The delegated official-only service has a distinct identity and result archive.
+After both arms have all 50 native results, pass their separate result paths to
+`report_pair.py`. Full-arm validation remains mandatory even when `--layout-ids`
+selects the matching Fast subset (29 through 49). Preserve all genuine failures,
+source lineage, the delegation certificate, speed-transition evidence and both
+archive roots in the final report.
+
 ## Subscription CLI speed
 
 `agent.gpt62sol.codexcli.json` now requests `codex_service_tier: "fast"` following

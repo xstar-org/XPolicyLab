@@ -26,6 +26,20 @@ control = load('cluster_control')
 
 
 class PairTests(unittest.TestCase):
+    def test_fast_subset_still_requires_both_complete_arms(self):
+        original={i:i>=29 for i in range(50)}
+        official={i:i>=30 for i in range(50)}
+        result=report.compare(original,official,range(29,50))
+        self.assertEqual(result['original']['episodes'],21)
+        self.assertEqual(result['original']['successes'],21)
+        self.assertEqual(result['official_only']['successes'],20)
+        self.assertEqual(result['paired']['original_only'],1)
+        self.assertEqual(result['layout_ids'],list(range(29,50)))
+        with self.assertRaises(ValueError):
+            report.compare({i:original[i] for i in range(29,50)},official,range(29,50))
+        for invalid in ([],[29,29],[True],[50]):
+            with self.assertRaises(ValueError):report.compare(original,official,invalid)
+
     def test_cli_validation_has_separate_snapshot_and_single_episode_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
