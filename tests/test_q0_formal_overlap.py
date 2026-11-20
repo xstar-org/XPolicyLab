@@ -26,6 +26,32 @@ def request():
 
 
 class FormalOverlapTests(unittest.TestCase):
+    def test_cross_allocation_transfer_requires_cancelled_explicit_user_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ('code', 'claims', 'results'):(root/folder).mkdir()
+            old = request()
+            module.reserve_identity(root, old)
+            (root/'results'/(old['name']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'],returncode=1)))
+            (root/'claims'/(old['name']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'],formal_overlap=True)))
+            new = dict(old,name='replacement-official_only',job_id='99',
+                resume_source_service=old['name'],step_gpu_index=2,
+                cross_allocation_authorization=module.CROSS_ALLOCATION_AUTHORIZATION)
+            pause = dict(user_requested_pause=True,source_job_id=old['job_id'],
+                source_allocation_state='CANCELLED',completed_before_pause=13,source_service=old['name'])
+            record = dict(source_service=old['name'],target_service=new['name'],
+                benchmark_name=old['benchmark_name'],interrupted_episode_counted=False,completed=13)
+            certificate = root/'code'/('resume-'+new['name']+'.json')
+            certificate.write_text(json.dumps(record));new['resume_record']=record
+            with self.assertRaisesRegex(ValueError,'released user-pause'):
+                module.reserve_identity(root,new)
+            record['operator_pause']=pause;certificate.write_text(json.dumps(record))
+            module.validate(new)
+            self.assertEqual(module.gpu_step_args(new),['--gpus-per-task=1','--gpu-bind=map_gpu:2'])
+            module.reserve_identity(root,new)
+            self.assertEqual(json.loads((root/'code/formal-overlap-official_only.json').read_text())['job_id'],'99')
+            with self.assertRaises(ValueError):module.validate(dict(new,step_gpu_index=None))
+
     def test_queued_resume_is_guarded_before_worker_can_claim_and_needs_no_slurm_rpc(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -142,6 +168,8 @@ class FormalOverlapTests(unittest.TestCase):
 
     def test_gpu_identity_and_capacity(self):
         self.assertEqual(module.gpu_headroom('0, GPU-test, 9241, 23028', 'GPU-test')['free_mib'], 13787)
+        self.assertEqual(module.gpu_headroom('2, GPU-test, 9241, 23028', 'GPU-test',
+            require_index_zero=False)['logical_cuda_index'], 0)
         for output in ('0, GPU-other, 9241, 23028', '0, GPU-test, 13000, 23028',
                        '0, GPU-test, 9241, 23028\n1, GPU-other, 0, 23028'):
             with self.assertRaises(ValueError):

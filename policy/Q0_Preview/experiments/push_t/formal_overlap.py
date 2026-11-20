@@ -19,6 +19,7 @@ import time
 
 
 AUTHORIZATION = 'same_gpu_official_only_50'
+CROSS_ALLOCATION_AUTHORIZATION = 'resume_after_explicit_user_pause'
 
 
 def save(path, value):
@@ -49,17 +50,30 @@ def validate(message):
         raise ValueError('Invalid allocation identity')
     if message['name'] == message['co_run']:
         raise ValueError('Overlap must have its own service identity')
+    if message.get('cross_allocation_authorization') is not None:
+        if (message['cross_allocation_authorization'] != CROSS_ALLOCATION_AUTHORIZATION
+                or message.get('existing_worker_queue') or not message.get('resume_source_service')
+                or type(message.get('step_gpu_index')) is not int
+                or not 0 <= message['step_gpu_index'] < 16):
+            raise ValueError('Explicit paused-run allocation/single-GPU binding required')
 
 
-def gpu_headroom(output, expected_uuid, minimum_free_mib=11000):
+def gpu_step_args(message):
+    if message.get('cross_allocation_authorization'):
+        return ['--gpus-per-task=1', '--gpu-bind=map_gpu:'+str(message['step_gpu_index'])]
+    return []
+
+
+def gpu_headroom(output, expected_uuid, minimum_free_mib=11000, require_index_zero=True):
     rows = [row.strip().split(',') for row in output.strip().splitlines() if row.strip()]
     if len(rows) != 1 or len(rows[0]) != 4:
         raise ValueError('Expected exactly one allocation-visible GPU')
     index, uuid, used, total = [value.strip() for value in rows[0]]
     used, total = int(used), int(total)
-    if index != '0' or uuid != expected_uuid or total-used < minimum_free_mib:
+    if (not index.isdigit() or (require_index_zero and index != '0')
+            or uuid != expected_uuid or total-used < minimum_free_mib):
         raise ValueError('Same-GPU identity/headroom gate failed')
-    return dict(index=0, uuid=uuid, used_mib=used, total_mib=total,
+    return dict(index=int(index), logical_cuda_index=0, uuid=uuid, used_mib=used, total_mib=total,
                 free_mib=total-used, minimum_free_mib=minimum_free_mib)
 
 
@@ -84,14 +98,17 @@ def reserve_identity(root, message, commit=True):
     if previous == identity:
         return
     source = message.get('resume_source_service')
+    cross = message.get('cross_allocation_authorization') == CROSS_ALLOCATION_AUTHORIZATION
     if (source != previous['name'] or any(previous[key] != identity[key]
-            for key in ('job_id', 'benchmark_name', 'co_run', 'authorization'))):
+            for key in ('benchmark_name', 'co_run', 'authorization'))
+            or (previous['job_id'] != identity['job_id'] and not cross)):
         raise ValueError('Conflicting overlap identity without a direct resume chain')
     worker = json.loads((root/'results'/(source+'.json')).read_text())
     claim = json.loads((root/'claims'/(source+'.json')).read_text())
     certificate = json.loads((root/'code'/('resume-'+message['name']+'.json')).read_text())
-    if ('returncode' not in worker or worker.get('job_id') != identity['job_id']
-            or claim.get('job_id') != identity['job_id']
+    source_job = previous['job_id']
+    if ('returncode' not in worker or worker.get('job_id') != source_job
+            or claim.get('job_id') != source_job
             or certificate != message.get('resume_record')
             or certificate.get('source_service') != source
             or certificate.get('target_service') != message['name']
@@ -99,6 +116,13 @@ def reserve_identity(root, message, commit=True):
             or certificate.get('interrupted_episode_counted') is not False
             or not 0 < certificate.get('completed', 0) < 50):
         raise ValueError('Missing terminal predecessor/native resume proof')
+    if cross:
+        pause = certificate.get('operator_pause') or {}
+        if (pause.get('user_requested_pause') is not True or pause.get('source_job_id') != source_job
+                or not str(pause.get('source_allocation_state', '')).startswith('CANCELLED')
+                or pause.get('completed_before_pause') != certificate['completed']
+                or pause.get('source_service') != source or identity['job_id'] == source_job):
+            raise ValueError('Allocation transfer requires an explicit released user-pause proof')
     if not claim.get('formal_overlap'):
         predecessor = json.loads((root/'code'/('formal-overlap-'+source+'.json')).read_text())
         if predecessor['request'].get('existing_worker_queue') is not True:
@@ -124,8 +148,9 @@ def prepare(root, message):
     if (root/'runs'/name).exists() or (root/'results'/(name+'.json')).exists():
         raise ValueError('Formal overlap requires a fresh service')
     co_claim = json.loads((root/'claims'/(message['co_run']+'.json')).read_text())
-    if co_claim.get('job_id') != job_id or ((root/'results'/(message['co_run']+'.json')).exists()
-            and not message.get('resume_source_service')):
+    cross = message.get('cross_allocation_authorization') == CROSS_ALLOCATION_AUTHORIZATION
+    if not message.get('resume_source_service') and (co_claim.get('job_id') != job_id
+            or (root/'results'/(message['co_run']+'.json')).exists()):
         raise ValueError('The original arm must be active in the same allocation')
     queued = message.get('existing_worker_queue') is True
     if queued:
@@ -143,10 +168,10 @@ def prepare(root, message):
         if state != 'RUNNING':
             raise ValueError('The existing Slurm allocation is not running')
         output = subprocess.check_output(['srun', '--jobid='+job_id, '--overlap', '--nodes=1',
-            '--ntasks=1', '--cpus-per-task=1', 'nvidia-smi',
+            '--ntasks=1', '--cpus-per-task=1', *gpu_step_args(message), 'nvidia-smi',
             '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'],
             text=True, timeout=60)
-        hardware = gpu_headroom(output, message['gpu_uuid'])
+        hardware = gpu_headroom(output, message['gpu_uuid'], require_index_zero=not cross)
     control = load_control(root, message['benchmark_name'])
     deployment = control.run(root, dict(action='deployment', benchmark_name=message['benchmark_name'],
                                       site_setup=message['site_setup']))
@@ -165,11 +190,13 @@ def prepare(root, message):
     control.run(root, dict(action='submit', name=name, mode='official_only', episodes=50,
         benchmark_name=message['benchmark_name'], agent_config_name=message['agent_config_name'],
         cluster_prefix=message['cluster_prefix'], site_setup=message['site_setup']))
-    if queued:
+    if queued or cross:
         launcher = root/'code'/('launch-'+name+'.sh')
         script = launcher.read_text()
         guard = shlex.join(['python3', str(Path(__file__).resolve()), '--root', str(root),
             '--verify-worker-job', job_id, '--gpu-uuid', message['gpu_uuid']])
+        if cross:
+            guard += ' --allow-physical-gpu-index'
         if script.count('exec bash ') != 1:
             raise ValueError('Unexpected immutable launcher template')
         launcher.write_text(script.replace('exec bash ', guard+'\nexec bash ', 1))
@@ -230,7 +257,7 @@ def execute(root, name, job_id):
     started = time.time()
     with (root/'logs'/(name+'.log')).open('x') as log:
         child = subprocess.Popen(['srun', '--jobid='+job_id, '--overlap', '--nodes=1',
-            '--ntasks=1', '--cpus-per-task=4', *request['argv']], cwd=root,
+            '--ntasks=1', '--cpus-per-task=4', *gpu_step_args(message), *request['argv']], cwd=root,
             stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         result = child.wait()
     save(root/'results'/(name+'.json'), dict(returncode=result, job_id=job_id,
@@ -238,12 +265,13 @@ def execute(root, name, job_id):
         authorization=AUTHORIZATION))
 
 
-def verify_worker(job_id, gpu_uuid):
+def verify_worker(job_id, gpu_uuid, allow_physical_gpu_index=False):
     if os.environ.get('SLURM_JOB_ID') != job_id or os.environ.get('CUDA_VISIBLE_DEVICES') != '0':
         raise ValueError('Queued arm reached a different allocation/GPU')
     output = subprocess.check_output(['nvidia-smi',
         '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'], text=True, timeout=30)
-    return dict(job_id=job_id, hardware=gpu_headroom(output, gpu_uuid))
+    return dict(job_id=job_id, hardware=gpu_headroom(output, gpu_uuid,
+                require_index_zero=not allow_physical_gpu_index))
 
 
 if __name__ == '__main__':
@@ -253,9 +281,10 @@ if __name__ == '__main__':
     parser.add_argument('--job-id')
     parser.add_argument('--verify-worker-job')
     parser.add_argument('--gpu-uuid')
+    parser.add_argument('--allow-physical-gpu-index', action='store_true')
     args = parser.parse_args()
     if args.verify_worker_job:
-        print(json.dumps(verify_worker(args.verify_worker_job, args.gpu_uuid)))
+        print(json.dumps(verify_worker(args.verify_worker_job, args.gpu_uuid, args.allow_physical_gpu_index)))
     elif args.execute:
         execute(args.root, args.execute, args.job_id)
     else:

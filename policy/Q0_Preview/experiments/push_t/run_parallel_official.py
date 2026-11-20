@@ -15,8 +15,8 @@ import subprocess
 import sys
 import time
 
-from formal_overlap import AUTHORIZATION
-from native_resume import completed_sessions, infrastructure_tail_proof
+from formal_overlap import AUTHORIZATION, CROSS_ALLOCATION_AUTHORIZATION
+from native_resume import completed_sessions, infrastructure_tail_proof, operator_pause_proof
 from report_pair import outcomes
 
 
@@ -54,9 +54,15 @@ def main():
     parser.add_argument('--user-request', required=True)
     parser.add_argument('--resume-from', type=Path)
     parser.add_argument('--existing-worker-queue', action='store_true')
+    parser.add_argument('--operator-pause-certificate', type=Path)
+    parser.add_argument('--released-allocation-certificate', type=Path)
+    parser.add_argument('--step-gpu-index', type=int)
     args = parser.parse_args()
     if args.existing_worker_queue and not args.resume_from:
         parser.error('Existing-worker dispatch requires an audited resume source')
+    if args.operator_pause_certificate and (not args.resume_from or not args.released_allocation_certificate
+            or args.existing_worker_queue or args.step_gpu_index is None):
+        parser.error('Operator-pause resume requires source, released allocation and single-GPU step binding')
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
@@ -144,11 +150,23 @@ def main():
         # Some native interruptions leave the tail uncounted; others write a
         # failure before closing. Only a proven unclosed infrastructure tail
         # may be removed, never a closed genuine failure.
-        valid, tail = resume_archive_proof(source, count)
+        if args.operator_pause_certificate:
+            pause_copy = root/'operator-pause-certificate.json'
+            released_copy = root/'released-allocation-certificate.json'
+            pause_copy.write_bytes(args.operator_pause_certificate.read_bytes())
+            released_copy.write_bytes(args.released_allocation_certificate.read_bytes())
+            tail = operator_pause_proof(source, 'official_only', pause_copy, released_copy)
+            valid = tail['completed_before_pause']
+            if count not in (valid, valid+1) or args.job_id == tail['source_job_id']:
+                raise ValueError('Operator-pause native count or replacement allocation differs')
+        else:
+            valid, tail = resume_archive_proof(source, count)
         (root/'interrupted-tail-proof.json').write_text(json.dumps(tail, indent=2))
         request = dict(root=args.remote_root, benchmark_name=args.benchmark_name,
             source_service=source.name+'-official_only', target_service=name)
-        if count == valid+1:
+        if args.operator_pause_certificate:
+            request['operator_pause'] = tail
+        elif count == valid+1:
             request['exclude_infrastructure_tail'] = tail
         program = Path(__file__).with_name('native_resume.py').read_text()
         record = remote(shlex.join(['python3', '-c', program]), request)
@@ -158,6 +176,9 @@ def main():
             inherited_sessions=completed_sessions(source, 'official_only', valid))))
         (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
         message.update(resume_source_service=request['source_service'], resume_record=record)
+        if args.operator_pause_certificate:
+            message.update(cross_allocation_authorization=CROSS_ALLOCATION_AUTHORIZATION,
+                           step_gpu_index=args.step_gpu_index)
     if args.existing_worker_queue:
         message['existing_worker_queue'] = True
     authorization_message = message
