@@ -282,10 +282,10 @@ clocks after the SSH handshake, and maintains a controller heartbeat. Connection
 or Agent infrastructure failure aborts the run rather than inventing task results.
 Keep both hosts' clocks synchronized. API waits do not advance simulator actions;
 25 Hz control and motion execution stay entirely on the allocated GPU node.
-Use an experiment-private SSH ControlMaster/ControlPersist socket so status checks
-and the bridge share one authenticated connection. Put the socket in a short,
-owner-only path (Unix-domain socket paths are length-limited). Management SSH
-failures have a bounded retry budget; an identical submission is idempotent and
+Keep the bridge on its own SSH TCP connection, with `ControlMaster=no` and
+`ControlPath=none`. Management/status checks use separate connections so a slow
+management request cannot block observation delivery. Management SSH failures
+have a bounded retry budget; an identical submission is idempotent and
 does not requeue an episode. Transport timing checks allow network/scheduling
 latency, and the timeout covers receiving an entire response, including images.
 
