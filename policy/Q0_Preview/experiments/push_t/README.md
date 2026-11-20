@@ -8,7 +8,9 @@ model's numerical result. No task success result is included in this change.
 ## Protocol
 
 - Standard `push_T`, `arx_x5`, joint control, evaluation seed 1, 50 episodes per arm.
-- Run `original` first, then `official_only`, in fresh services and fresh workspaces.
+- Use fresh services and fresh workspaces for both arms. The default driver runs
+  `original` first, then `official_only`; this experiment uses the user's explicitly
+  requested concurrent execution on the same GPU, as documented below.
 - Freeze the same 50 layout files and their SHA-256 hashes before running either arm.
   If the asset directory has more than 50 standard layouts, use the first 50 in
   numeric order, matching native SeedManager with `EVAL_NUM=50`; do not select by outcome.
