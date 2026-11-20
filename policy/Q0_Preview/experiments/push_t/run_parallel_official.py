@@ -192,7 +192,8 @@ def main():
         proof = remote(shlex.join(['python3', remote_helper, '--root', args.remote_root]), message)
         (root/'overlap-launch.json').write_text(json.dumps(proof, indent=2))
         stage_active = True
-        print('PARALLEL_OFFICIAL_ONLY_STARTED episodes=50 '+json.dumps(proof['launch']), flush=True)
+        event = 'OFFICIAL_ONLY_QUEUED' if args.existing_worker_queue else 'PARALLEL_OFFICIAL_ONLY_STARTED'
+        print(event+' episodes=50 '+json.dumps(proof['launch']), flush=True)
         started = time.monotonic()
         claimed_at = None
         while True:
