@@ -1,0 +1,18 @@
+{
+  "source_url": "https://robodojo-benchmark.com/leaderboard/detail-description",
+  "retrieved_utc": "2026-11-19T10:29:00.073514+00:00",
+  "source_bundle_url": "https://robodojo-benchmark.com/assets/index-Cqo9GI9Z.js",
+  "cards": {
+    "push_T": {
+      "description": "Push the T-shaped block along the tabletop until its position and orientation exactly match the gray T-shaped target pad. Keep the block supported by the table throughout the task and do not pick it up. Check the alignment of both the stem and crossbar rather than only bringing the block's center near the target. Correct the remaining position and orientation differences until the block matches the target outline and stays stable after contact ends. Fully open both grippers and return both arms to their initial poses. push_T_random uses the same description.",
+      "scoring": [
+        "**0 points:** The target pose, reset, or no-lift condition is not satisfied.",
+        "**100 points:** The T-shaped block is within the target xy threshold, its orientation matches the target, the robot returns to origin, and the block is never lifted above the allowed height."
+      ],
+      "return_home_required": true,
+      "control_step_limit": 600
+    }
+  },
+  "runtime_metadata_source": "RoboDojo task push_T: control-step budget; not an extra scoring threshold",
+  "text_sha256": "6514386990600092019ba8012e734410e44a24741b388d0e0debf2eb61b5ed99"
+}

@@ -30,6 +30,8 @@ def main():
     p.add_argument('--turn-seconds',type=int,default=3600);p.add_argument('--smoke',action='store_true')
     p.add_argument('--checkpoint-seconds',type=int,default=60)
     p.add_argument('--smoke-two-group',action='store_true',help='API-free scripted CONTINUE/REPLAN gate regression; implies --smoke')
+    p.add_argument('--external-agent', action='store_true',
+                   help='Run only the controller; an SSH-connected Agent owns planning on another host')
     args=p.parse_args();args.smoke=args.smoke or args.smoke_two_group
     if min(args.plans,args.wall_seconds,args.turn_seconds,args.checkpoint_seconds)<1:p.error('Limits must be positive')
     root=create_run_directory(args.root)
@@ -38,7 +40,7 @@ def main():
     cfg=config(args.python_prefix,args.config)
     agent_env=os.environ.copy()
     agent_env.update(OPENBLAS_NUM_THREADS='1',OMP_NUM_THREADS='1',PYTHONDONTWRITEBYTECODE='1')
-    if not args.smoke:
+    if not args.smoke and not args.external_agent and cfg['provider'] != 'codex_cli':
         if not agent_env.get(cfg['api_key_env']):
             raise RuntimeError('Missing API environment variable: '+cfg['api_key_env'])
     save(root/'agent_config.json',cfg)
@@ -46,12 +48,14 @@ def main():
     overrides=[f'port={args.port}',f'host={args.host}','bench_name=RoboDojo',f'task_name={args.task}',
         'ckpt_name=api','env_cfg_type=arx_x5',f'seed={args.seed}',f'policy_name={POLICY.name}',
         'action_type=joint',f'run_root={internal}',f'max_plans={args.plans}',
-        f'wall_seconds={args.wall_seconds}',f'turn_seconds={args.turn_seconds}',f'checkpoint_seconds={args.checkpoint_seconds}']
+        f'wall_seconds={args.wall_seconds}',f'turn_seconds={args.turn_seconds}',f'checkpoint_seconds={args.checkpoint_seconds}',
+        f'task_information_mode={cfg["task_information_mode"]}']
     env=os.environ.copy()
     env.pop(cfg['api_key_env'], None)
     env.update(PYTHONDONTWRITEBYTECODE='1', OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='4',
                CUDA_VISIBLE_DEVICES=str(args.gpu),
-               PYTHONPATH=os.pathsep.join([str(POLICY.parents[2]),str(POLICY.parents[1])]))
+               PYTHONPATH=os.pathsep.join([str(POLICY.parents[2]),str(POLICY.parents[1]),
+                   os.environ.get('Q0_PREVIEW_CONTROLLER_PYTHONPATH', '')]))
     cmd=[sys.executable,'-u',str(POLICY.parents[1]/'setup_policy_server.py'),
          '--config_path',str(POLICY/'deploy.yml')]
     cmd+=['--overrides']+overrides
@@ -76,9 +80,18 @@ def main():
             if time.monotonic()>until:
                 raise TimeoutError('Policy server startup')
             time.sleep(.25)
-        save(root/'SERVICE_READY.json',{'port':args.port,'backend':'native','pid':server.pid,'smoke':args.smoke})
+        save(root/'SERVICE_READY.json',{'port':args.port,'backend':'native','pid':server.pid,
+             'smoke':args.smoke, 'external_agent':args.external_agent})
+        external_started = time.time()
         while server.poll() is None:
             if (root/'STOP').exists():break
+            if args.external_agent:
+                heartbeat = root/'EXTERNAL_AGENT.json'
+                last = heartbeat.stat().st_mtime if heartbeat.exists() else external_started
+                if time.time()-last > 180:
+                    raise TimeoutError('External Agent bridge heartbeat missing for 180 seconds')
+                time.sleep(.2)
+                continue
             for ep in sessions.iterdir():
                 if not (ep/'episode.json').exists() or ep in children:continue
                 acmd=[str(Path(args.python_prefix)/'bin/python'),'-u',str(POLICY/'tools/agent_entry.py'),

@@ -19,4 +19,5 @@ fi
 args=(--port "$9" --host "${10:-localhost}" --task "$2" --seed "$6" --gpu "$7"
       --python-prefix "${Q0_PREVIEW_AGENT_PREFIX:-${Q0_PREVIEW_ACTIVE_PREFIX}}")
 if [[ -n "${Q0_PREVIEW_AGENT_CONFIG:-}" ]]; then args+=(--config "$Q0_PREVIEW_AGENT_CONFIG"); fi
+if [[ "${Q0_PREVIEW_EXTERNAL_AGENT:-0}" == 1 ]]; then args+=(--external-agent); fi
 exec python -u "${SCRIPT_DIR}/tools/policy_service.py" "${args[@]}"

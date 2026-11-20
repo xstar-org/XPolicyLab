@@ -7,7 +7,7 @@ from pathlib import Path
 from ..controller.backend import array
 from ..controller.executor import Executor, Replan, Ended, StopExecution, StepBudgetExhausted
 from .protocol import validate_plan, validate_decision, ContractError, MAX_GROUPS
-from .task_context import task_context, task_card
+from .task_context import task_context, task_card, information_mode
 from .termination import validate_termination
 from .io_utils import atomic, read_json, json_default
 from ..harness.observations import publish_manifest
@@ -22,7 +22,8 @@ class Episode:
         self.root.mkdir(parents=True,exist_ok=False)
         self.run_id = self.root.name
         self.task = str(config['task_name'])
-        self.context = task_context(self.task)
+        self.information_mode = information_mode(config.get('task_information_mode', 'original'))
+        self.context = task_context(self.task, mode=self.information_mode)
         self.started = time.monotonic()
         self.started_unix = time.time()
         self.wall_limit = float(config.get('wall_seconds',10800))
@@ -41,7 +42,8 @@ class Episode:
             'max_groups':MAX_GROUPS, 'checkpoint_limit_s':self.check_limit,'max_plans':self.max_plans,'wall_started_unix_s':self.started_unix,
             'wall_deadline_unix_s':self.started_unix+self.wall_limit,'turn_limit_s':self.turn_limit,
             'control_step_limit':self.b.max_control_steps,
-            'control_step_limit_source':'audited static task definition'})
+            'control_step_limit_source':'audited static task definition',
+            'task_information_mode':self.information_mode, 'task_context':self.context})
         self.b.on_step_acknowledged = self.record_progress
         self.record_progress()
 
@@ -91,7 +93,7 @@ class Episode:
                    wall_seconds_remaining=max(0, self.remaining()),
                    planning_rounds_remaining=max(0, self.max_plans-self.plan_no),
                    task_requirements=self.context,
-                   completion_requirements={'return_home_required': task_card(self.task)['return_home_required']},
+                   completion_requirements={'return_home_required': task_card(self.task, self.information_mode)['return_home_required']},
                    state_notice=self.notice)
         self.last_sim, self.last_wall, self.last_env_step = obs['sim_time_s'], now, obs['control_steps_used']
         obs_id = f'obs_{self.counter:05d}'

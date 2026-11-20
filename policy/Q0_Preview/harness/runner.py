@@ -10,7 +10,7 @@ import shutil
 import signal
 import time
 from ..runtime.io_utils import atomic, read_json
-from ..runtime.task_context import task_reference
+from ..runtime.task_context import stage_task_reference, planning_prompt, information_mode
 from ..runtime.protocol import PLAN_SCHEMA, DECISION_SCHEMA, obj, normalize_plan, validate_decision
 from ..runtime.termination import END_SCHEMA, validate_termination, TerminationRejected
 from .api import API, APIError, image_content, text_content, output_limit_reached
@@ -116,6 +116,10 @@ def python_image_paths(arguments):
 class Agent:
     def __init__(self, root, config):
         self.root, self.config = Path(root).resolve(), config
+        information_mode(config.get('task_information_mode', 'original'))
+        episode = read_json(self.root/'episode.json', {})
+        if episode.get('task_information_mode', 'original') != config.get('task_information_mode', 'original'):
+            raise ValueError('Episode and Agent task_information_mode disagree')
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = (self.root/'.agent.lock').open('w')
         fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -141,7 +145,8 @@ class Agent:
 
     def _planning_prefix(self):
         if not hasattr(self, '_frozen_prefix'):
-            system = (POLICY/'assets/prompts/prompt.md').read_text()
+            system = planning_prompt((POLICY/'assets/prompts/prompt.md').read_text(),
+                                     self.config.get('task_information_mode', 'original'))
             system += '\n'+(POLICY/'assets/prompts/geometry_context.md').read_text()
             runtime = getattr(self.sandbox, 'runtime', {})
             if runtime:
@@ -165,7 +170,8 @@ class Agent:
     def prepare(self, req):
         source, manifest, obs = stage_observation(self.root, self.sandbox, req)
         # The same current-task definitions are injected in task_requirements and queryable here.
-        atomic(self.sandbox.work/'task_reference.json', task_reference(req['task']))
+        stage_task_reference(self.sandbox.work, req['task'],
+                             self.config.get('task_information_mode', 'original'))
         visible = model_observation(obs, req['observation_id'], checking=req['kind'] == 'checkpoint')
         content = [text_content(model_json(visible), self.api.provider)]
         for camera in manifest['cameras']:
@@ -226,7 +232,10 @@ class Agent:
                 raise ValueError('exactly one checkpoint_decision is required')
             return validate_decision(calls[0]['input'])
         except Exception as exc:
-            atomic(self.root/'errors'/(req['observation_id']+'.json'), {'request': req, 'error': repr(exc)})
+            error = {'request': req, 'error': repr(exc)}
+            if self.api.provider == 'codex_cli' and isinstance(exc, (APIError, OSError)):
+                error['infrastructure'] = True
+            atomic(self.root/'errors'/(req['observation_id']+'.json'), error)
             return {'decision': 'REPLAN', 'reason': ('checkpoint unavailable or invalid: '+str(exc))[:300]}
 
     def _respond(self, req):

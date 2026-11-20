@@ -115,9 +115,9 @@ class API:
     def __init__(self, root, config):
         self.root, self.config = Path(root), config
         self.provider = config['provider']
-        if self.provider not in ('anthropic', 'openai'):
+        if self.provider not in ('anthropic', 'openai', 'codex_cli'):
             raise ValueError('Unknown API provider')
-        if self.provider == 'openai' and config.get('stream', False) is not False:
+        if self.provider in ('openai', 'codex_cli') and config.get('stream', False) is not False:
             raise ValueError('OpenAI Responses transport requires stream=false')
         self.tool_image_mode = config.get('anthropic_tool_image_mode', 'top_level')
         if self.tool_image_mode not in ('top_level', 'nested'):
@@ -191,6 +191,14 @@ class API:
         default_env = self.config.get('api_key_env') or ('ANTHROPIC_AUTH_TOKEN' if self.provider == 'anthropic' else 'OPENAI_API_KEY')
         previous_index = self.index
         try:
+            if self.provider == 'codex_cli':
+                from .codex_cli import call_codex
+                try:
+                    return call_codex(self, payload, req)
+                except APIError:
+                    raise
+                except Exception as error:
+                    raise APIError('codex_cli_transport_error', str(error)) from error
             return self._call(payload, req, default_env)
         finally:
             if self.index > previous_index:
