@@ -51,15 +51,22 @@ def validate(message):
     if message['name'] == message['co_run']:
         raise ValueError('Overlap must have its own service identity')
     if message.get('cross_allocation_authorization') is not None:
+        allowed = message.get('authorized_gpu_uuids')
+        valid_set = (isinstance(allowed, list) and 0 < len(allowed) <= 16
+            and len(set(allowed)) == len(allowed) and all(isinstance(value, str)
+                and re.fullmatch(r'GPU-[0-9a-fA-F-]{36}', value) for value in allowed)
+            and message.get('gpu_uuid') in allowed)
         if (message['cross_allocation_authorization'] != CROSS_ALLOCATION_AUTHORIZATION
                 or message.get('existing_worker_queue') or not message.get('resume_source_service')
-                or type(message.get('step_gpu_index')) is not int
-                or not 0 <= message['step_gpu_index'] < 16):
+                or not (valid_set or (allowed is None and type(message.get('step_gpu_index')) is int
+                                     and 0 <= message['step_gpu_index'] < 16))):
             raise ValueError('Explicit paused-run allocation/single-GPU binding required')
 
 
 def gpu_step_args(message):
     if message.get('cross_allocation_authorization'):
+        if message.get('authorized_gpu_uuids'):
+            return ['--gpus-per-task=1', '--gpu-bind=single:1']
         return ['--gpus-per-task=1', '--gpu-bind=map_gpu:'+str(message['step_gpu_index'])]
     return []
 
@@ -70,8 +77,9 @@ def gpu_headroom(output, expected_uuid, minimum_free_mib=11000, require_index_ze
         raise ValueError('Expected exactly one allocation-visible GPU')
     index, uuid, used, total = [value.strip() for value in rows[0]]
     used, total = int(used), int(total)
+    allowed = {expected_uuid} if isinstance(expected_uuid, str) else set(expected_uuid)
     if (not index.isdigit() or (require_index_zero and index != '0')
-            or uuid != expected_uuid or total-used < minimum_free_mib):
+            or uuid not in allowed or total-used < minimum_free_mib):
         raise ValueError('Same-GPU identity/headroom gate failed')
     return dict(index=int(index), logical_cuda_index=0, uuid=uuid, used_mib=used, total_mib=total,
                 free_mib=total-used, minimum_free_mib=minimum_free_mib)
@@ -171,7 +179,8 @@ def prepare(root, message):
             '--ntasks=1', '--cpus-per-task=1', *gpu_step_args(message), 'nvidia-smi',
             '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'],
             text=True, timeout=60)
-        hardware = gpu_headroom(output, message['gpu_uuid'], require_index_zero=not cross)
+        hardware = gpu_headroom(output, message.get('authorized_gpu_uuids') or message['gpu_uuid'],
+                                require_index_zero=not cross)
     control = load_control(root, message['benchmark_name'])
     deployment = control.run(root, dict(action='deployment', benchmark_name=message['benchmark_name'],
                                       site_setup=message['site_setup']))
@@ -196,7 +205,9 @@ def prepare(root, message):
         guard = shlex.join(['python3', str(Path(__file__).resolve()), '--root', str(root),
             '--verify-worker-job', job_id, '--gpu-uuid', message['gpu_uuid']])
         if cross:
-            guard += ' --allow-physical-gpu-index'
+            guard += ' --allow-physical-gpu-index --binding-name '+shlex.quote(name)
+            if message.get('authorized_gpu_uuids'):
+                guard += ' --authorized-gpu-uuids '+shlex.quote(','.join(message['authorized_gpu_uuids']))
         if script.count('exec bash ') != 1:
             raise ValueError('Unexpected immutable launcher template')
         launcher.write_text(script.replace('exec bash ', guard+'\nexec bash ', 1))
@@ -265,13 +276,15 @@ def execute(root, name, job_id):
         authorization=AUTHORIZATION))
 
 
-def verify_worker(job_id, gpu_uuid, allow_physical_gpu_index=False):
+def verify_worker(job_id, gpu_uuid, allow_physical_gpu_index=False, authorized_gpu_uuids=None):
     if os.environ.get('SLURM_JOB_ID') != job_id or os.environ.get('CUDA_VISIBLE_DEVICES') != '0':
         raise ValueError('Queued arm reached a different allocation/GPU')
     output = subprocess.check_output(['nvidia-smi',
         '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'], text=True, timeout=30)
-    return dict(job_id=job_id, hardware=gpu_headroom(output, gpu_uuid,
-                require_index_zero=not allow_physical_gpu_index))
+    return dict(job_id=job_id, slurm_step_gpus=os.environ.get('SLURM_STEP_GPUS'),
+        cuda_visible_devices=os.environ.get('CUDA_VISIBLE_DEVICES'), verified_unix=time.time(),
+        hardware=gpu_headroom(output, authorized_gpu_uuids or gpu_uuid,
+                             require_index_zero=not allow_physical_gpu_index))
 
 
 if __name__ == '__main__':
@@ -282,9 +295,24 @@ if __name__ == '__main__':
     parser.add_argument('--verify-worker-job')
     parser.add_argument('--gpu-uuid')
     parser.add_argument('--allow-physical-gpu-index', action='store_true')
+    parser.add_argument('--authorized-gpu-uuids')
+    parser.add_argument('--binding-name')
     args = parser.parse_args()
     if args.verify_worker_job:
-        print(json.dumps(verify_worker(args.verify_worker_job, args.gpu_uuid, args.allow_physical_gpu_index)))
+        allowed = args.authorized_gpu_uuids.split(',') if args.authorized_gpu_uuids else None
+        if args.binding_name:
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,96}', args.binding_name):
+                raise ValueError('Invalid binding identity')
+            manifest = json.loads((args.root/'code'/('formal-overlap-'+args.binding_name+'.json')).read_text())
+            request = manifest['request']
+            validate(request)
+            if (request['job_id'] != args.verify_worker_job or request['gpu_uuid'] != args.gpu_uuid
+                    or request.get('authorized_gpu_uuids') != allowed):
+                raise ValueError('Dispatch binding differs from authorized manifest')
+        binding = verify_worker(args.verify_worker_job, args.gpu_uuid, args.allow_physical_gpu_index, allowed)
+        if args.binding_name:
+            save(args.root/'code'/('effective-gpu-binding-'+args.binding_name+'.json'), binding)
+        print(json.dumps(binding))
     elif args.execute:
         execute(args.root, args.execute, args.job_id)
     else:
@@ -295,6 +323,8 @@ if __name__ == '__main__':
                 dict(action='status', name=message['name'], benchmark_name=message['benchmark_name']))
             claim = args.root/'claims'/(message['name']+'.json')
             result['allocation_claim'] = json.loads(claim.read_text()) if claim.exists() else None
+            binding = args.root/'code'/('effective-gpu-binding-'+message['name']+'.json')
+            result['effective_gpu_binding'] = json.loads(binding.read_text()) if binding.exists() else None
             print(json.dumps(result))
         else:
             print(json.dumps(start(args.root, message)))

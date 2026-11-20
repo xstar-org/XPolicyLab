@@ -57,11 +57,12 @@ def main():
     parser.add_argument('--operator-pause-certificate', type=Path)
     parser.add_argument('--released-allocation-certificate', type=Path)
     parser.add_argument('--step-gpu-index', type=int)
+    parser.add_argument('--authorized-gpu-uuids', help='Comma-separated authorized allocation UUID set; dispatch chooses one')
     args = parser.parse_args()
     if args.existing_worker_queue and not args.resume_from:
         parser.error('Existing-worker dispatch requires an audited resume source')
     if args.operator_pause_certificate and (not args.resume_from or not args.released_allocation_certificate
-            or args.existing_worker_queue or args.step_gpu_index is None):
+            or args.existing_worker_queue or (args.step_gpu_index is None and not args.authorized_gpu_uuids)):
         parser.error('Operator-pause resume requires source, released allocation and single-GPU step binding')
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -110,7 +111,7 @@ def main():
             time.sleep(5*(attempt+1))
 
     def control(message):
-        if args.existing_worker_queue and message.get('action') == 'status' and message.get('name') == name:
+        if (args.existing_worker_queue or args.operator_pause_certificate) and message.get('action') == 'status' and message.get('name') == name:
             return remote(shlex.join(['python3', remote_helper, '--root', args.remote_root]),
                           dict(authorization_message, operation='queue_status'))
         return remote(shlex.join(['python3', remote_policy+'/experiments/push_t/cluster_control.py',
@@ -179,6 +180,8 @@ def main():
         if args.operator_pause_certificate:
             message.update(cross_allocation_authorization=CROSS_ALLOCATION_AUTHORIZATION,
                            step_gpu_index=args.step_gpu_index)
+            if args.authorized_gpu_uuids:
+                message['authorized_gpu_uuids'] = args.authorized_gpu_uuids.split(',')
     if args.existing_worker_queue:
         message['existing_worker_queue'] = True
     authorization_message = message
@@ -221,6 +224,8 @@ def main():
             if bridge.poll() not in (None, 0):
                 raise RuntimeError('Parallel official-only bridge failed')
             status = control(dict(action='status', name=name))
+            if status.get('effective_gpu_binding') is not None:
+                (root/'effective-gpu-binding.json').write_text(json.dumps(status['effective_gpu_binding'], indent=2))
             claim = status.get('allocation_claim')
             if claim:
                 if claim.get('job_id') != args.job_id:

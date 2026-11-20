@@ -26,6 +26,27 @@ def request():
 
 
 class FormalOverlapTests(unittest.TestCase):
+    def test_authorized_set_accepts_a_different_dispatch_gpu_from_probe(self):
+        first = 'GPU-00000000-0000-0000-0000-000000000001'
+        second = 'GPU-00000000-0000-0000-0000-000000000002'
+        outside = 'GPU-00000000-0000-0000-0000-000000000003'
+        message = dict(request(),cross_allocation_authorization=module.CROSS_ALLOCATION_AUTHORIZATION,
+            resume_source_service='old-official_only',authorized_gpu_uuids=[first,second],
+            gpu_uuid=first,step_gpu_index=None)
+        module.validate(message)
+        self.assertEqual(module.gpu_step_args(message),['--gpus-per-task=1','--gpu-bind=single:1'])
+        probe = module.gpu_headroom('0, '+first+', 0, 24000', [first,second])
+        with patch.dict(module.os.environ,dict(SLURM_JOB_ID='1836298',CUDA_VISIBLE_DEVICES='0',SLURM_STEP_GPUS='6')):
+            with patch.object(module.subprocess,'check_output',return_value='0, '+second+', 0, 24000'):
+                actual = module.verify_worker('1836298',first,True,[first,second])
+            self.assertNotEqual(probe['uuid'],actual['hardware']['uuid'])
+            self.assertEqual(actual['hardware']['uuid'],second)
+            self.assertEqual(actual['slurm_step_gpus'],'6')
+            with patch.object(module.subprocess,'check_output',return_value='0, '+outside+', 0, 24000'):
+                with self.assertRaises(ValueError):module.verify_worker('1836298',first,True,[first,second])
+            with patch.object(module.subprocess,'check_output',return_value='0, '+first+', 0, 24000\n1, '+second+', 0, 24000'):
+                with self.assertRaises(ValueError):module.verify_worker('1836298',first,True,[first,second])
+
     def test_cross_allocation_transfer_requires_cancelled_explicit_user_pause(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
