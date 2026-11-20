@@ -71,12 +71,13 @@ def load_control(root, benchmark):
     return module
 
 
-def reserve_identity(root, message):
+def reserve_identity(root, message, commit=True):
     """One arm at a time; a terminal direct predecessor may transfer its lock."""
     lock = root/'code/formal-overlap-official_only.json'
     identity = {key: message[key] for key in ('name', 'job_id', 'benchmark_name', 'co_run', 'authorization')}
     if not lock.exists():
-        exact(lock, identity)
+        if commit:
+            exact(lock, identity)
         return
     previous = json.loads(lock.read_text())
     if previous == identity:
@@ -98,8 +99,9 @@ def reserve_identity(root, message):
             or not 0 < certificate.get('completed', 0) < 50):
         raise ValueError('Missing terminal predecessor/native resume proof')
     # Preserve every lock transition for operator audit, then transfer it.
-    exact(root/'code'/('formal-overlap-predecessor-'+message['name']+'.json'), previous)
-    save(lock, identity)
+    if commit:
+        exact(root/'code'/('formal-overlap-predecessor-'+message['name']+'.json'), previous)
+        save(lock, identity)
 
 
 def prepare(root, message):
@@ -108,7 +110,7 @@ def prepare(root, message):
     name, job_id = message['name'], message['job_id']
     manifest = root/'code'/('formal-overlap-'+name+'.json')
     # Idempotent management retries cannot start a second official-only arm.
-    reserve_identity(root, message)
+    reserve_identity(root, message, commit=False)
     if manifest.exists():
         previous = json.loads(manifest.read_text())
         if previous['request'] != message:
@@ -135,6 +137,8 @@ def prepare(root, message):
         raise ValueError('Immutable simulator snapshot differs from validated deployment')
     if control.run(root, dict(action='freeze', benchmark_name=message['benchmark_name'])) != message['layouts']:
         raise ValueError('Frozen layouts differ from original arm')
+    # Transfer ownership only after all read-only scheduler/hardware/code gates.
+    reserve_identity(root, message)
     record = dict(request=message, hardware=hardware, prepared_unix=time.time(),
                   helper_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
     # Reserve the claim FIRST. The serial allocation worker skips claimed files.

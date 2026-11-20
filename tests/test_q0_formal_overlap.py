@@ -73,6 +73,11 @@ class FormalOverlapTests(unittest.TestCase):
             worker.write_text(json.dumps(dict(job_id=old['job_id'], returncode=1)))
             with self.assertRaisesRegex(ValueError, 'terminal predecessor'):
                 module.reserve_identity(root, dict(new, resume_record=dict(record, completed=12)))
+            (root/'claims'/(old['co_run']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'])))
+            with patch.object(module.subprocess, 'check_output', side_effect=RuntimeError('controller unavailable')):
+                with self.assertRaisesRegex(RuntimeError, 'controller unavailable'):
+                    module.prepare(root, new)
+            self.assertEqual(json.loads((root/'code/formal-overlap-official_only.json').read_text())['name'], old['name'])
             module.reserve_identity(root, new)
             module.reserve_identity(root, new)
             self.assertEqual(json.loads((root/'code/formal-overlap-official_only.json').read_text())['name'], new['name'])
