@@ -3,7 +3,16 @@
 This experiment compares Q0's original task information with the official task
 description and public scoring text, using `gpt-6.2-sol` for both arms. This is a
 new model substitution experiment, not a reproduction of the original leaderboard
-model's numerical result. No task success result is included in this change.
+model's numerical result.
+
+The completed 2026-11-21 experiment is documented in the
+[Chinese report](results/2026-11-21-gpt62sol/REPORT_zh.md), with native results,
+paired statistics, layout hashes and archive provenance. Original achieved 46/50
+(92%) and official-only 45/50 (90%); exact paired McNemar p=1.0. The matched Fast
+subset (layouts 29–49) is 20/21 for each arm. The report discloses the original
+arm's Standard/Fast transition, different execution phases, and the extension
+from the official default 25 cases to 50. These results do not establish
+equivalence or generalize beyond this task and seed.
 
 ## Protocol
 

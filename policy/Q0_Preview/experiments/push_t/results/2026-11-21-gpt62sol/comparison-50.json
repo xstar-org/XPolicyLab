@@ -1,0 +1,28 @@
+{
+  "original": {
+    "successes": 46,
+    "episodes": 50,
+    "success_rate": 0.92,
+    "wilson_95": [
+      0.8116175308165717,
+      0.968450485911407
+    ]
+  },
+  "official_only": {
+    "successes": 45,
+    "episodes": 50,
+    "success_rate": 0.9,
+    "wilson_95": [
+      0.7863976856252035,
+      0.9565242350681096
+    ]
+  },
+  "difference_original_minus_official": 0.02,
+  "paired": {
+    "both_success": 42,
+    "original_only": 4,
+    "official_only": 3,
+    "both_fail": 1,
+    "mcnemar_exact_two_sided_p": 1.0
+  }
+}

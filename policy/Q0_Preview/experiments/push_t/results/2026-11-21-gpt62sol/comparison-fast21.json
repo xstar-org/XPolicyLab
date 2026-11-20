@@ -1,0 +1,51 @@
+{
+  "original": {
+    "successes": 20,
+    "episodes": 21,
+    "success_rate": 0.9523809523809523,
+    "wilson_95": [
+      0.7733063992587743,
+      0.9915440121901737
+    ]
+  },
+  "official_only": {
+    "successes": 20,
+    "episodes": 21,
+    "success_rate": 0.9523809523809523,
+    "wilson_95": [
+      0.7733063992587743,
+      0.9915440121901737
+    ]
+  },
+  "difference_original_minus_official": 0.0,
+  "paired": {
+    "both_success": 19,
+    "original_only": 1,
+    "official_only": 1,
+    "both_fail": 0,
+    "mcnemar_exact_two_sided_p": 1.0
+  },
+  "layout_ids": [
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+  ]
+}
