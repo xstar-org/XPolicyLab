@@ -159,6 +159,22 @@ GPU memory and host/cgroup memory before starting the second simulator. A second
 Slurm step uses the existing allocation with `--overlap`; never release or replace
 the allocation or stop the active original arm.
 
+For an interrupted official-only service, `run_parallel_official.py --resume-from`
+requires a terminal predecessor, matching policy/configuration and frozen layouts,
+closed episode archives, and an audited unclosed infrastructure tail. It inherits
+the valid native prefix, including genuine failures, into a fresh service and records
+the source hashes and archive lineage. It never extends episode or checkpoint budgets.
+The singleton ownership transfer requires that direct predecessor and its native
+resume certificate; ordinary overlap checks must pass before ownership changes.
+
+If the Slurm controller is unavailable while the existing allocation worker remains
+usable, add `--existing-worker-queue` to that audited resume. The request waits for
+the current original service to finish, then the worker launches it in the same
+allocation. A dispatch-time guard checks the job ID, GPU UUID and memory before
+starting the simulator. This path creates no new Slurm step. Queue waiting is tracked
+separately; the simulator startup timeout begins only after the worker claims it.
+An unsuccessful overlap launch that never executed any episode contributes no results.
+
 An already running serial driver will otherwise submit its own official-only arm
 after the original 50 finish. `reserve_parallel_arm.py` requires explicit operator
 authorization and reserves only the still-unsubmitted serial official-only launcher.
