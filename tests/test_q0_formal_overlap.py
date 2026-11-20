@@ -5,12 +5,15 @@ from unittest.mock import patch
 
 import unittest
 import tempfile
+import sys
 
 
 SOURCE = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/experiments/push_t/formal_overlap.py'
 spec = importlib.util.spec_from_file_location('formal_overlap', SOURCE)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
+sys.path.insert(0, str(SOURCE.parent))
+from run_parallel_official import resume_archive_proof
 
 
 def request():
@@ -23,6 +26,60 @@ def request():
 
 
 class FormalOverlapTests(unittest.TestCase):
+    def test_counted_and_uncounted_infrastructure_tail_keep_the_same_closed_prefix(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index in range(4):
+                episode = root/'official_only/sessions'/str(index)
+                episode.mkdir(parents=True)
+                (episode/'episode.json').write_text(json.dumps(dict(task='push_T',
+                    task_information_mode='official_only', wall_started_unix_s=index)))
+                if index < 3:
+                    (episode/'END.json').write_text('{}')
+                else:
+                    (episode/'errors').mkdir()
+                    (episode/'errors/checkpoint.json').write_text('{"infrastructure":true}')
+            for count in (3, 4):
+                valid, tail = resume_archive_proof(root, count)
+                self.assertEqual(valid, 3)
+                self.assertEqual(tail['layout_id'], 3)
+                self.assertTrue(tail['infrastructure'])
+            with self.assertRaises(ValueError):
+                resume_archive_proof(root, 2)
+            (root/'official_only/sessions/3/END.json').write_text('{}')
+            with self.assertRaises(ValueError):
+                resume_archive_proof(root, 4)
+
+    def test_lock_transfer_requires_terminal_direct_predecessor_and_native_certificate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ('code', 'claims', 'results'):
+                (root/folder).mkdir()
+            old = request()
+            module.reserve_identity(root, old)
+            new = dict(old, name='parallel-official-cli-002-official_only',
+                       resume_source_service=old['name'])
+            record = dict(source_service=old['name'], target_service=new['name'],
+                benchmark_name=old['benchmark_name'], interrupted_episode_counted=False, completed=13)
+            new['resume_record'] = record
+            worker = root/'results'/(old['name']+'.json')
+            claim = root/'claims'/(old['name']+'.json')
+            certificate = root/'code'/('resume-'+new['name']+'.json')
+            worker.write_text(json.dumps(dict(job_id=old['job_id'])))
+            claim.write_text(json.dumps(dict(job_id=old['job_id'], formal_overlap=True)))
+            certificate.write_text(json.dumps(record))
+            with self.assertRaisesRegex(ValueError, 'terminal predecessor'):
+                module.reserve_identity(root, new)
+            worker.write_text(json.dumps(dict(job_id=old['job_id'], returncode=1)))
+            with self.assertRaisesRegex(ValueError, 'terminal predecessor'):
+                module.reserve_identity(root, dict(new, resume_record=dict(record, completed=12)))
+            module.reserve_identity(root, new)
+            module.reserve_identity(root, new)
+            self.assertEqual(json.loads((root/'code/formal-overlap-official_only.json').read_text())['name'], new['name'])
+            self.assertEqual(json.loads((root/'code'/('formal-overlap-predecessor-'+new['name']+'.json')).read_text())['name'], old['name'])
+            with self.assertRaisesRegex(ValueError, 'direct resume chain'):
+                module.reserve_identity(root, dict(new, name='parallel-official-cli-003-official_only'))
+
     def test_only_explicit_separate_official_50_is_authorized(self):
         for change in (dict(authorization='yes'), dict(mode='original'), dict(episodes=1),
                        dict(gpu=1), dict(user_request=''), dict(job_id='1;kill'),

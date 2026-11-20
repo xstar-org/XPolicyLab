@@ -16,8 +16,23 @@ import sys
 import time
 
 from formal_overlap import AUTHORIZATION
-from native_resume import completed_sessions
+from native_resume import completed_sessions, infrastructure_tail_proof
 from report_pair import outcomes
+
+
+def resume_archive_proof(source, native_count):
+    """Prove the closed prefix and exactly one unclosed infrastructure tail."""
+    if type(native_count) is not int or not 0 < native_count <= 50:
+        raise ValueError('Native resume requires a nonempty completed prefix')
+    try:
+        completed_sessions(source, 'official_only', native_count)
+        valid = native_count
+    except ValueError:
+        valid = native_count-1
+        completed_sessions(source, 'official_only', valid)
+    if not 0 < valid < 50:
+        raise ValueError('Resume prefix must be nonempty and incomplete')
+    return valid, infrastructure_tail_proof(source, 'official_only', valid)
 
 
 def main():
@@ -37,6 +52,7 @@ def main():
     parser.add_argument('--job-id', required=True)
     parser.add_argument('--gpu-uuid', required=True)
     parser.add_argument('--user-request', required=True)
+    parser.add_argument('--resume-from', type=Path)
     args = parser.parse_args()
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -105,9 +121,40 @@ def main():
         gpu_uuid=args.gpu_uuid, user_request=args.user_request, benchmark_name=args.benchmark_name,
         site_setup=args.site_setup, cluster_prefix=args.cluster_prefix,
         agent_config_name=args.agent_config.name, deployment=deployment, layouts=layouts)
+    if args.resume_from:
+        source = args.resume_from.resolve()
+        expected_cfg = dict(cfg, task_information_mode='official_only',
+            python_prefix=str(Path(args.python_prefix).resolve()), base_url='',
+            api_key_env=cfg.get('api_key_env', 'Q0_PREVIEW_API_KEY'))
+        if (json.loads((source/'layouts.json').read_text()) != layouts
+                or json.loads((source/'deployment.json').read_text()) != deployment
+                or json.loads((source/'official_only/agent_config.json').read_text()) != expected_cfg):
+            raise ValueError('Resume source layouts, deployment or policy config differs')
+        prior = control(dict(action='status', name=source.name+'-official_only'))
+        (root/'resume-source-status.json').write_text(json.dumps(prior, indent=2))
+        if prior.get('worker_result') is None:
+            raise ValueError('Interrupted predecessor must be terminal before resuming')
+        count = (prior.get('evaluator_result') or {}).get('eval_time', 0)
+        # Some native interruptions leave the tail uncounted; others write a
+        # failure before closing. Only a proven unclosed infrastructure tail
+        # may be removed, never a closed genuine failure.
+        valid, tail = resume_archive_proof(source, count)
+        (root/'interrupted-tail-proof.json').write_text(json.dumps(tail, indent=2))
+        request = dict(root=args.remote_root, benchmark_name=args.benchmark_name,
+            source_service=source.name+'-official_only', target_service=name)
+        if count == valid+1:
+            request['exclude_infrastructure_tail'] = tail
+        program = Path(__file__).with_name('native_resume.py').read_text()
+        record = remote(shlex.join(['python3', '-c', program]), request)
+        if record['completed'] != valid:
+            raise ValueError('Native resume prefix does not match closed archives')
+        lineage = dict(stages=dict(official_only=dict(native=record, initial_completed=valid,
+            inherited_sessions=completed_sessions(source, 'official_only', valid))))
+        (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
+        message.update(resume_source_service=request['source_service'], resume_record=record)
     (root/'formal-authorization.json').write_text(json.dumps(message, indent=2, ensure_ascii=False))
     helper = Path(__file__).with_name('formal_overlap.py').read_bytes()
-    remote_helper = args.remote_root+'/code/formal_overlap.py'
+    remote_helper = args.remote_root+'/code/formal_overlap-'+hashlib.sha256(helper).hexdigest()[:16]+'.py'
     upload = "import base64,json,sys;from pathlib import Path;m=json.load(sys.stdin);p=Path(m['path']);b=base64.b64decode(m['source']);assert not p.exists() or p.read_bytes()==b;p.write_bytes(b);print(json.dumps({'sha256':__import__('hashlib').sha256(b).hexdigest()}))"
     remote(shlex.join(['python3', '-c', upload]), dict(path=remote_helper, source=base64.b64encode(helper).decode()))
     bridge = None

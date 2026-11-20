@@ -71,15 +71,44 @@ def load_control(root, benchmark):
     return module
 
 
+def reserve_identity(root, message):
+    """One arm at a time; a terminal direct predecessor may transfer its lock."""
+    lock = root/'code/formal-overlap-official_only.json'
+    identity = {key: message[key] for key in ('name', 'job_id', 'benchmark_name', 'co_run', 'authorization')}
+    if not lock.exists():
+        exact(lock, identity)
+        return
+    previous = json.loads(lock.read_text())
+    if previous == identity:
+        return
+    source = message.get('resume_source_service')
+    if (source != previous['name'] or any(previous[key] != identity[key]
+            for key in ('job_id', 'benchmark_name', 'co_run', 'authorization'))):
+        raise ValueError('Conflicting overlap identity without a direct resume chain')
+    worker = json.loads((root/'results'/(source+'.json')).read_text())
+    claim = json.loads((root/'claims'/(source+'.json')).read_text())
+    certificate = json.loads((root/'code'/('resume-'+message['name']+'.json')).read_text())
+    if ('returncode' not in worker or worker.get('job_id') != identity['job_id']
+            or not claim.get('formal_overlap') or claim.get('job_id') != identity['job_id']
+            or certificate != message.get('resume_record')
+            or certificate.get('source_service') != source
+            or certificate.get('target_service') != message['name']
+            or certificate.get('benchmark_name') != message['benchmark_name']
+            or certificate.get('interrupted_episode_counted') is not False
+            or not 0 < certificate.get('completed', 0) < 50):
+        raise ValueError('Missing terminal predecessor/native resume proof')
+    # Preserve every lock transition for operator audit, then transfer it.
+    exact(root/'code'/('formal-overlap-predecessor-'+message['name']+'.json'), previous)
+    save(lock, identity)
+
+
 def prepare(root, message):
     validate(message)
     root = Path(root).resolve()
     name, job_id = message['name'], message['job_id']
     manifest = root/'code'/('formal-overlap-'+name+'.json')
-    lock = root/'code/formal-overlap-official_only.json'
     # Idempotent management retries cannot start a second official-only arm.
-    identity = {key: message[key] for key in ('name', 'job_id', 'benchmark_name', 'co_run', 'authorization')}
-    exact(lock, identity)
+    reserve_identity(root, message)
     if manifest.exists():
         previous = json.loads(manifest.read_text())
         if previous['request'] != message:
@@ -88,7 +117,8 @@ def prepare(root, message):
     if (root/'runs'/name).exists() or (root/'results'/(name+'.json')).exists():
         raise ValueError('Formal overlap requires a fresh service')
     co_claim = json.loads((root/'claims'/(message['co_run']+'.json')).read_text())
-    if co_claim.get('job_id') != job_id or (root/'results'/(message['co_run']+'.json')).exists():
+    if co_claim.get('job_id') != job_id or ((root/'results'/(message['co_run']+'.json')).exists()
+            and not message.get('resume_source_service')):
         raise ValueError('The original arm must be active in the same allocation')
     state = subprocess.check_output(['squeue', '-h', '-j', job_id, '-o', '%T'], text=True, timeout=30).strip()
     if state != 'RUNNING':
