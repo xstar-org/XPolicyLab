@@ -53,7 +53,10 @@ def main():
     parser.add_argument('--gpu-uuid', required=True)
     parser.add_argument('--user-request', required=True)
     parser.add_argument('--resume-from', type=Path)
+    parser.add_argument('--existing-worker-queue', action='store_true')
     args = parser.parse_args()
+    if args.existing_worker_queue and not args.resume_from:
+        parser.error('Existing-worker dispatch requires an audited resume source')
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     policy = Path(__file__).resolve().parents[2]
@@ -101,6 +104,9 @@ def main():
             time.sleep(5*(attempt+1))
 
     def control(message):
+        if args.existing_worker_queue and message.get('action') == 'status' and message.get('name') == name:
+            return remote(shlex.join(['python3', remote_helper, '--root', args.remote_root]),
+                          dict(authorization_message, operation='queue_status'))
         return remote(shlex.join(['python3', remote_policy+'/experiments/push_t/cluster_control.py',
                                  '--root', args.remote_root]), dict(message, benchmark_name=args.benchmark_name))
 
@@ -152,6 +158,9 @@ def main():
             inherited_sessions=completed_sessions(source, 'official_only', valid))))
         (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
         message.update(resume_source_service=request['source_service'], resume_record=record)
+    if args.existing_worker_queue:
+        message['existing_worker_queue'] = True
+    authorization_message = message
     (root/'formal-authorization.json').write_text(json.dumps(message, indent=2, ensure_ascii=False))
     helper = Path(__file__).with_name('formal_overlap.py').read_bytes()
     remote_helper = args.remote_root+'/code/formal_overlap-'+hashlib.sha256(helper).hexdigest()[:16]+'.py'
@@ -185,12 +194,25 @@ def main():
         stage_active = True
         print('PARALLEL_OFFICIAL_ONLY_STARTED episodes=50 '+json.dumps(proof['launch']), flush=True)
         started = time.monotonic()
+        claimed_at = None
         while True:
             if bridge.poll() not in (None, 0):
                 raise RuntimeError('Parallel official-only bridge failed')
-            if time.monotonic()-started > 1200 and not list((root/'official_only/sessions').glob('*/episode.json')):
-                raise TimeoutError('Parallel simulator produced no observation in 20 minutes')
             status = control(dict(action='status', name=name))
+            claim = status.get('allocation_claim')
+            if claim:
+                if claim.get('job_id') != args.job_id:
+                    raise ValueError('Queued arm was claimed by a different allocation')
+                if claimed_at is None:
+                    claimed_at = time.monotonic()
+            if args.existing_worker_queue:
+                status['queue_wait_s'] = (claimed_at or time.monotonic())-started
+                status['claimed_startup_elapsed_s'] = (time.monotonic()-claimed_at
+                    if claimed_at is not None else None)
+            waiting_since = claimed_at if args.existing_worker_queue else started
+            if (waiting_since is not None and time.monotonic()-waiting_since > 1200
+                    and not list((root/'official_only/sessions').glob('*/episode.json'))):
+                raise TimeoutError('Claimed simulator produced no observation in 20 minutes')
             temporary = root/'official_only-status.tmp'
             temporary.write_text(json.dumps(status, indent=2))
             temporary.replace(root/'official_only-status.json')

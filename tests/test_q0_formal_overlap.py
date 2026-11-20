@@ -26,6 +26,54 @@ def request():
 
 
 class FormalOverlapTests(unittest.TestCase):
+    def test_queued_resume_is_guarded_before_worker_can_claim_and_needs_no_slurm_rpc(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for folder in ('code', 'claims', 'results', 'requests', 'jobs/1836298'):
+                (root/folder).mkdir(parents=True)
+            old = request()
+            module.reserve_identity(root, old)
+            new = dict(old, name='parallel-official-cli-003-official_only',
+                resume_source_service=old['name'], existing_worker_queue=True)
+            record = dict(source_service=old['name'], target_service=new['name'],
+                benchmark_name=old['benchmark_name'], interrupted_episode_counted=False, completed=13)
+            new['resume_record'] = record
+            (root/'code'/('resume-'+new['name']+'.json')).write_text(json.dumps(record))
+            (root/'results'/(old['name']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'], returncode=1)))
+            (root/'claims'/(old['name']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'], formal_overlap=True)))
+            (root/'claims'/(old['co_run']+'.json')).write_text(json.dumps(dict(job_id=old['job_id'])))
+            (root/'jobs/1836298/allocation.json').write_text(json.dumps(dict(job_id=old['job_id'], cuda_visible_devices='0')))
+            (root/'jobs/1836298/READY.json').write_text(json.dumps(dict(job_id=old['job_id'], status='ready')))
+            submissions = []
+
+            class Control:
+                @staticmethod
+                def run(root, payload):
+                    if payload['action'] == 'deployment':return new['deployment']
+                    if payload['action'] == 'freeze':return new['layouts']
+                    claim = json.loads((root/'claims'/(new['name']+'.json')).read_text())
+                    assert claim['queue_hold'] is True
+                    submissions.append(payload)
+                    (root/'code'/('launch-'+new['name']+'.sh')).write_text('#!/bin/bash\nexec bash frozen.sh\n')
+                    (root/'requests'/(new['name']+'.json')).write_text('{}')
+
+            with patch.object(module, 'load_control', return_value=Control), patch.object(
+                    module.subprocess, 'check_output', side_effect=AssertionError('no Slurm RPC')), patch.object(
+                    module.subprocess, 'Popen', side_effect=AssertionError('no new scheduler')):
+                proof = module.start(root, new)
+                self.assertTrue(proof['launch']['existing_worker_queue'])
+                self.assertFalse((root/'claims'/(new['name']+'.json')).exists())
+                script = (root/'code'/('launch-'+new['name']+'.sh')).read_text()
+                self.assertLess(script.index('--verify-worker-job 1836298'), script.index('exec bash frozen.sh'))
+                module.start(root, new)
+                self.assertEqual(len(submissions), 1)
+
+    def test_worker_dispatch_rejects_another_allocation_before_gpu_or_simulator(self):
+        with patch.dict(module.os.environ, dict(SLURM_JOB_ID='another', CUDA_VISIBLE_DEVICES='0')):
+            with patch.object(module.subprocess, 'check_output', side_effect=AssertionError('must not run')):
+                with self.assertRaisesRegex(ValueError, 'different allocation'):
+                    module.verify_worker('1836298', 'GPU-test')
+
     def test_counted_and_uncounted_infrastructure_tail_keep_the_same_closed_prefix(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

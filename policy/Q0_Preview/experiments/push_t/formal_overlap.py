@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -90,7 +91,7 @@ def reserve_identity(root, message, commit=True):
     claim = json.loads((root/'claims'/(source+'.json')).read_text())
     certificate = json.loads((root/'code'/('resume-'+message['name']+'.json')).read_text())
     if ('returncode' not in worker or worker.get('job_id') != identity['job_id']
-            or not claim.get('formal_overlap') or claim.get('job_id') != identity['job_id']
+            or claim.get('job_id') != identity['job_id']
             or certificate != message.get('resume_record')
             or certificate.get('source_service') != source
             or certificate.get('target_service') != message['name']
@@ -98,6 +99,10 @@ def reserve_identity(root, message, commit=True):
             or certificate.get('interrupted_episode_counted') is not False
             or not 0 < certificate.get('completed', 0) < 50):
         raise ValueError('Missing terminal predecessor/native resume proof')
+    if not claim.get('formal_overlap'):
+        predecessor = json.loads((root/'code'/('formal-overlap-'+source+'.json')).read_text())
+        if predecessor['request'].get('existing_worker_queue') is not True:
+            raise ValueError('Predecessor was not an authorized formal arm')
     # Preserve every lock transition for operator audit, then transfer it.
     if commit:
         exact(root/'code'/('formal-overlap-predecessor-'+message['name']+'.json'), previous)
@@ -122,14 +127,26 @@ def prepare(root, message):
     if co_claim.get('job_id') != job_id or ((root/'results'/(message['co_run']+'.json')).exists()
             and not message.get('resume_source_service')):
         raise ValueError('The original arm must be active in the same allocation')
-    state = subprocess.check_output(['squeue', '-h', '-j', job_id, '-o', '%T'], text=True, timeout=30).strip()
-    if state != 'RUNNING':
-        raise ValueError('The existing Slurm allocation is not running')
-    output = subprocess.check_output(['srun', '--jobid='+job_id, '--overlap', '--nodes=1',
-        '--ntasks=1', '--cpus-per-task=1', 'nvidia-smi',
-        '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'],
-        text=True, timeout=60)
-    hardware = gpu_headroom(output, message['gpu_uuid'])
+    queued = message.get('existing_worker_queue') is True
+    if queued:
+        if not message.get('resume_source_service'):
+            raise ValueError('Existing-worker dispatch is limited to a proven resume')
+        allocation = json.loads((root/'jobs'/job_id/'allocation.json').read_text())
+        ready = json.loads((root/'jobs'/job_id/'READY.json').read_text())
+        if (allocation.get('job_id') != job_id or allocation.get('cuda_visible_devices') != '0'
+                or ready.get('job_id') != job_id or ready.get('status') != 'ready'):
+            raise ValueError('Existing worker qualification/allocation differs')
+        hardware = dict(existing_worker_queue=True, expected_uuid=message['gpu_uuid'],
+                        verification='dispatch-time allocation/GPU/headroom guard')
+    else:
+        state = subprocess.check_output(['squeue', '-h', '-j', job_id, '-o', '%T'], text=True, timeout=30).strip()
+        if state != 'RUNNING':
+            raise ValueError('The existing Slurm allocation is not running')
+        output = subprocess.check_output(['srun', '--jobid='+job_id, '--overlap', '--nodes=1',
+            '--ntasks=1', '--cpus-per-task=1', 'nvidia-smi',
+            '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'],
+            text=True, timeout=60)
+        hardware = gpu_headroom(output, message['gpu_uuid'])
     control = load_control(root, message['benchmark_name'])
     deployment = control.run(root, dict(action='deployment', benchmark_name=message['benchmark_name'],
                                       site_setup=message['site_setup']))
@@ -144,10 +161,19 @@ def prepare(root, message):
     # Reserve the claim FIRST. The serial allocation worker skips claimed files.
     claim = root/'claims'/(name+'.json')
     exact(claim, dict(job_id=job_id, formal_overlap=True, authorization=AUTHORIZATION,
-                      name=name, prepared_unix=record['prepared_unix']))
+                      name=name, prepared_unix=record['prepared_unix'], queue_hold=queued))
     control.run(root, dict(action='submit', name=name, mode='official_only', episodes=50,
         benchmark_name=message['benchmark_name'], agent_config_name=message['agent_config_name'],
         cluster_prefix=message['cluster_prefix'], site_setup=message['site_setup']))
+    if queued:
+        launcher = root/'code'/('launch-'+name+'.sh')
+        script = launcher.read_text()
+        guard = shlex.join(['python3', str(Path(__file__).resolve()), '--root', str(root),
+            '--verify-worker-job', job_id, '--gpu-uuid', message['gpu_uuid']])
+        if script.count('exec bash ') != 1:
+            raise ValueError('Unexpected immutable launcher template')
+        launcher.write_text(script.replace('exec bash ', guard+'\nexec bash ', 1))
+        record['guarded_launcher_sha256'] = hashlib.sha256(launcher.read_bytes()).hexdigest()
     save(manifest, record)
     return record
 
@@ -155,6 +181,17 @@ def prepare(root, message):
 def start(root, message):
     root = Path(root).resolve()
     record = prepare(root, message)
+    if message.get('existing_worker_queue') is True:
+        # The temporary claim held the request invisible to the serial worker
+        # until its guarded launcher and manifest were durable.
+        claim = root/'claims'/(message['name']+'.json')
+        if claim.exists():
+            held = json.loads(claim.read_text())
+            if held.get('queue_hold'):
+                if held.get('job_id') != message['job_id'] or held.get('name') != message['name']:
+                    raise ValueError('Queue hold identity changed')
+                claim.unlink()
+        return dict(record=record, launch=dict(existing_worker_queue=True, job_id=message['job_id']))
     marker = root/'claims'/(message['name']+'.formal-launch.json')
     if marker.exists():
         return dict(record=record, launch=json.loads(marker.read_text()), already_launched=True)
@@ -201,13 +238,34 @@ def execute(root, name, job_id):
         authorization=AUTHORIZATION))
 
 
+def verify_worker(job_id, gpu_uuid):
+    if os.environ.get('SLURM_JOB_ID') != job_id or os.environ.get('CUDA_VISIBLE_DEVICES') != '0':
+        raise ValueError('Queued arm reached a different allocation/GPU')
+    output = subprocess.check_output(['nvidia-smi',
+        '--query-gpu=index,uuid,memory.used,memory.total', '--format=csv,noheader,nounits'], text=True, timeout=30)
+    return dict(job_id=job_id, hardware=gpu_headroom(output, gpu_uuid))
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--execute')
     parser.add_argument('--job-id')
+    parser.add_argument('--verify-worker-job')
+    parser.add_argument('--gpu-uuid')
     args = parser.parse_args()
-    if args.execute:
+    if args.verify_worker_job:
+        print(json.dumps(verify_worker(args.verify_worker_job, args.gpu_uuid)))
+    elif args.execute:
         execute(args.root, args.execute, args.job_id)
     else:
-        print(json.dumps(start(args.root, json.load(sys.stdin))))
+        message = json.load(sys.stdin)
+        if message.pop('operation', None) == 'queue_status':
+            validate(message)
+            result = load_control(args.root, message['benchmark_name']).run(args.root,
+                dict(action='status', name=message['name'], benchmark_name=message['benchmark_name']))
+            claim = args.root/'claims'/(message['name']+'.json')
+            result['allocation_claim'] = json.loads(claim.read_text()) if claim.exists() else None
+            print(json.dumps(result))
+        else:
+            print(json.dumps(start(args.root, message)))
