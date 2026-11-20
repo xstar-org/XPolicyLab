@@ -24,7 +24,7 @@ runner = importlib.import_module(PACKAGE+'.harness.runner')
 
 
 class CodexCLITests(unittest.TestCase):
-    def call_with_native_events(self, root, native_events):
+    def call_with_native_events(self, root, native_events, service_tier=None, returned_tier='priority'):
         auth = root/'login'
         auth.mkdir()
         (auth/'auth.json').write_text('{}')
@@ -38,9 +38,13 @@ class CodexCLITests(unittest.TestCase):
             'account/rateLimits/read':{},
             'thread/start':dict(model='gpt-6.2-sol',thread=dict(id='native-test-thread')),
             'thread/inject_items':{}, 'turn/start':{}}
-        client = SimpleNamespace(events=[catalog],call=lambda method, params: responses[method],
+        if service_tier == 'fast':
+            responses['thread/start']['serviceTier'] = returned_tier
+        client = SimpleNamespace(events=[catalog],call=Mock(side_effect=lambda method, params: responses[method]),
             send=Mock(), receive=Mock(side_effect=native_events), close=Mock())
         api = api_module.API(root,dict(provider='codex_cli',model='gpt-6.2-sol',codex_auth_home=str(auth)))
+        if service_tier is not None:
+            api.config['codex_service_tier'] = service_tier
         tool = dict(name='submit_trajectory',description='Q0 trajectory',schema=dict(type='object'))
         payload = api.payload('Original Q0 system instruction',
             [dict(role='user',content=[dict(type='input_text',text='Original observation')])],[tool])
@@ -50,6 +54,24 @@ class CodexCLITests(unittest.TestCase):
                 patch.object(cli.subprocess,'check_output',return_value='codex-cli test'), \
                 patch.object(cli,'StdioClient',return_value=client):
             return api, api.call(payload,req), client
+
+    def test_fast_requests_priority_without_changing_model_or_reasoning(self):
+        message=dict(type='message',role='assistant',status='completed',
+            content=[dict(type='output_text',text='Fast probe')])
+        events=[dict(method='rawResponseItem/completed',params=dict(item=message)),
+                dict(method='turn/completed',params=dict(turn=dict(status='completed',error=None)))]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            api,response,client=self.call_with_native_events(root,events,service_tier='fast')
+            thread=next(c.args[1] for c in client.call.call_args_list if c.args[0]=='thread/start')
+            self.assertEqual(thread['serviceTier'],'priority')
+            self.assertEqual(thread['model'],'gpt-6.2-sol')
+            receipt=json.loads(next((root/'api').glob('*/attempt_*/cli_receipt.json')).read_text())
+            self.assertEqual(receipt['requested_service_tier'],'fast')
+            self.assertEqual(receipt['thread_service_tier'],'priority')
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(api_module.APIError):
+                self.call_with_native_events(Path(directory),events,service_tier='fast',returned_tier=None)
 
     def test_native_text_only_completion_returns_to_existing_no_tool_harness(self):
         reasoning = dict(type='reasoning',summary=[],encrypted_content='opaque-original')

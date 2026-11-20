@@ -2,6 +2,7 @@
   "provider": "codex_cli",
   "model": "gpt-6.2-sol",
   "codex_executable": "codex",
+  "codex_service_tier": "fast",
   "python_prefix": "",
   "sandbox": "bwrap",
   "context_history": "first_recent",

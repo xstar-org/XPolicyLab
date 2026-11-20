@@ -197,6 +197,9 @@ def restricted_catalog(executable, env, home, target, model, timeout):
 
 def call_codex(api, payload, req):
     """Return an OpenAI-shaped compatibility envelope from a native CLI handoff."""
+    service_tier = api.config.get('codex_service_tier', 'default')
+    if service_tier not in ('default', 'fast'):
+        raise ValueError('Codex service tier must be default or fast')
     api.index += 1
     folder = api.root/'api'/f'{api.index:05d}_{req["kind"]}_{req["observation_id"]}'/'attempt_00'
     folder.mkdir(parents=True, exist_ok=False)
@@ -218,6 +221,7 @@ def call_codex(api, payload, req):
         native_model_response_complete=False, api_fallback=False,
         history_transport='thread/inject_items; original Responses items',
         completion_source='native_dynamic_tool_handoff', started_unix=time.time())
+    receipt['requested_service_tier'] = service_tier
     atomic(folder/'cli_receipt.json', receipt)
     client = temporary = None
     try:
@@ -239,6 +243,8 @@ def call_codex(api, payload, req):
         receipt['model_catalog'] = restricted_catalog(executable, env, home, catalog,
             api.model, min(60, max(1, deadline-time.time())))
         base['model_catalog_json'] = str(catalog)
+        if service_tier == 'fast':
+            base['service_tier'] = 'fast'
         command = [executable, 'app-server', '--stdio']
         for key, value in base.items():
             command += ['-c', key+'='+toml_literal(value)]
@@ -264,9 +270,14 @@ def call_codex(api, payload, req):
             experimentalRawEvents=True, allowProviderModelFallback=False,
             baseInstructions=payload['instructions'], developerInstructions='',
             dynamicTools=tools, environments=[], config=dict(skills=dict(config=skills)))
+        if service_tier == 'fast':
+            params['serviceTier'] = 'priority'
         started = client.call('thread/start', params)
         if started.get('model') != api.model:
             raise ValueError('Codex substituted a different model')
+        receipt['thread_service_tier'] = started.get('serviceTier')
+        if service_tier == 'fast' and started.get('serviceTier') not in ('fast', 'priority'):
+            raise ValueError('Codex did not acknowledge the requested Fast service tier')
         thread = started['thread']['id']
         receipt['thread_id'] = thread
         if history:

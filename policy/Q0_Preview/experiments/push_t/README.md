@@ -148,6 +148,28 @@ only the target checkpoint; keep the source result and all original outcomes
 immutable. The certificate records source/config/log/archive hashes. This flag
 cannot exclude any outcome or be combined with infrastructure-tail exclusion.
 
+## Subscription CLI speed
+
+`agent.gpt62sol.codexcli.json` now requests `codex_service_tier: "fast"` following
+the user's explicit speed-change instruction. Set it to `"default"` (or omit it)
+for Standard. Fast sets the native CLI service tier to `fast`, requests the wire
+tier `priority`, and requires `thread/start` to acknowledge `fast`/`priority`.
+Each CLI receipt records requested and acknowledged tiers. The model and existing
+planning/checkpoint reasoning settings are unchanged; unsupported or unacknowledged
+Fast requests fail closed rather than silently falling back.
+
+A real ChatGPT subscription probe verified both ordinary assistant completion and
+the subsequent native Q0 tool handoff with Fast acknowledged, using `gpt-6.2-sol`.
+This checks transport behavior, not a guaranteed wall-time speedup. Fast consumes
+more subscription allowance. See [official speed controls](https://learn.chatgpt.com/docs/agent-configuration/speed)
+and [pricing](https://learn.chatgpt.com/docs/pricing?codex-pricing-speed=fast).
+
+For the running experiment, the current Standard episode finishes before fresh
+episode processes load Fast. Preserve all earlier outcomes and record the live
+transition separately from launch-time metadata. The final report must disclose
+the Standard/Fast boundary; do not describe all 100 episodes as having one tier.
+Report the matching Fast-layout subset separately when assessing that confound.
+
 ## Optional API baseline access
 
 Claim eligible subscription API credits through OpenAI's
