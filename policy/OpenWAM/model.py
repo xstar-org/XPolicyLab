@@ -216,6 +216,7 @@ class Model(ModelTemplate):
         self._order: list[int] = []
 
         self.allow_dummy_policy = _is_true(self.model_cfg.get("allow_dummy_policy", False))
+        self.fixed_history = _is_true(self.model_cfg.get("fixed_history", False))
         self._engine = None
         self._wam_policy = None
         self._preprocessor = None
@@ -251,6 +252,9 @@ class Model(ModelTemplate):
         self._engine = server.engine
         self._wam_policy = server._policy  # for the binary-dim legality projection
         self._preprocessor = server._obs_preprocessor
+        model_uses_history = bool(getattr(self._engine.architecture, "fixed_history_prefix", False))
+        if self.fixed_history != model_uses_history:
+            raise ValueError("fixed_history must match the checkpoint's fixed_history_prefix setting")
 
         if self.replan_steps is None:
             horizon = OmegaConf.select(server.cfg, "inference.inference_horizon", default=None)
@@ -296,7 +300,7 @@ class Model(ModelTemplate):
             raise RuntimeError(f"state conversion produced {eef20.shape}, expected ({_EEF20_DIM},)")
         return eef20
 
-    def _encode_obs(self, obs: Mapping) -> dict:
+    def _encode_images(self, obs: Mapping) -> dict:
         vision = obs.get("vision")
         if not isinstance(vision, Mapping):
             raise ValueError("obs['vision'] must be a mapping of camera name -> {'color': image}")
@@ -306,7 +310,10 @@ class Model(ModelTemplate):
             if not isinstance(camera, Mapping) or "color" not in camera:
                 raise KeyError(f"missing required camera vision/{camera_name}/color")
             images[payload_name] = _to_pil(camera["color"], ctx=f"vision/{camera_name}/color")
+        return images
 
+    def _encode_obs(self, obs: Mapping) -> dict:
+        images = self._encode_images(obs)
         state = obs.get("state")
         if not isinstance(state, Mapping):
             raise ValueError("obs['state'] must be a mapping")
@@ -331,6 +338,8 @@ class Model(ModelTemplate):
         }
         if obs.get("state") is not None:
             cond["proprio"] = obs["state"]
+        if "history_clip_frames" in obs:
+            cond["history_clip_frames"] = obs["history_clip_frames"]
         return cond
 
     # ------------------------------------------------------------------
@@ -403,7 +412,53 @@ class Model(ModelTemplate):
         if missing:
             raise ValueError(f"No stored observation for env_idx {missing}; call update_obs_batch first.")
         payloads = [self._batch[e] for e in env_idx_list]
+        return self._generate_actions(payloads)
 
+    def get_fixed_history_spec(self):
+        if not self.fixed_history:
+            raise ValueError("Fixed-history inference is disabled for this policy")
+        from openwam.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
+
+        return {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
+
+    def infer_fixed_history_batch(self, observations):
+        """Generate one isolated batch from an episode's flat frame records."""
+        self.get_fixed_history_spec()
+        from openwam.fixed_history import history_frame_ids
+
+        frames = {}
+        current = {}
+        for obs in observations:
+            slot = int(obs["env_idx"])
+            frame_idx = int(obs["frame_idx"])
+            key = slot, frame_idx
+            if key in frames or frame_idx < 0:
+                raise ValueError(f"Invalid or duplicate history frame {key}")
+            frames[key] = obs
+            if obs.get("history_current"):
+                if slot in current:
+                    raise ValueError(f"Multiple current frames for env {slot}")
+                current[slot] = obs
+        if not current:
+            raise ValueError("Fixed-history inference requires current observations")
+
+        payloads = []
+        for slot, obs in current.items():
+            ordered_ids = history_frame_ids(int(obs["frame_idx"]))
+            missing = [idx for idx in set(ordered_ids) if (slot, idx) not in frames]
+            if missing:
+                raise ValueError(f"Missing fixed history frames for env {slot}: {sorted(missing)}")
+            payload = self._encode_obs(obs)
+            if not self.allow_dummy_policy:
+                images = {
+                    idx: self._preprocessor.preprocess_images(self._encode_images(frames[slot, idx]))
+                    for idx in set(ordered_ids)
+                }
+                payload["history_clip_frames"] = [images[idx] for idx in ordered_ids]
+            payloads.append(payload)
+        return self._generate_actions(payloads)
+
+    def _generate_actions(self, payloads):
         if self.allow_dummy_policy:
             return [self._hold_position_chunk(p) for p in payloads]
 
@@ -413,10 +468,10 @@ class Model(ModelTemplate):
         if hasattr(actions, "cpu"):
             actions = actions.detach().cpu().numpy()
         actions = np.asarray(actions)
-        if actions.ndim != 3 or actions.shape[0] != len(env_idx_list) or actions.shape[2] != _EEF20_DIM:
+        if actions.ndim != 3 or actions.shape[0] != len(payloads) or actions.shape[2] != _EEF20_DIM:
             raise RuntimeError(
                 f"generate_batch returned actions of shape {actions.shape}; "
-                f"expected (B={len(env_idx_list)}, T, {_EEF20_DIM})."
+                f"expected (B={len(payloads)}, T, {_EEF20_DIM})."
             )
         # Same final legality projection the OpenWAM server applies (no-op when
         # the checkpoint declares no binary command dims).
