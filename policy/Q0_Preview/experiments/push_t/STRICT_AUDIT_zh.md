@@ -75,3 +75,9 @@ description 与当前官方文本逐字一致，未补充改写；只使用 desc
 70 次模型调用、55 个规划上下文、15 个完整重建的检查点上下文、1,920 次图像出现，
 及实际沙箱材料均通过核验；无基础设施错误。此处仅报告一局的审计进度，
 不以单局推断总体表现。[首局完整审计](results/2026-11-22-strict/first-complete-episode-audit.json)。
+
+另外核查了实际挂载的 Python prefix：28 个通用依赖包，未发现受限任务卡/历史经验文件，
+也没有指向 RoboDojo 或 XPolicyLab 的 `.pth` 路径。补充文本搜索命中 4 个文件，
+逐一审阅后确认只是 `push_token` / `push_theme` 通用函数名，不是 `push_T` 任务数据；
+保留候选与审阅记录，不将关键词次数作为唯一证据。
+[依赖目录核查](results/2026-11-22-strict/python-prefix-inventory-audit.json)。
