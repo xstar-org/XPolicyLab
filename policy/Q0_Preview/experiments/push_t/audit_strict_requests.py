@@ -16,6 +16,21 @@ from types import ModuleType
 
 from audit_strict import audit, POLICY
 
+SANDBOX_ASSETS = {'geometry_reference.md':'assets/geometry/strict_geometry.md',
+                  'geometry_interfaces.md':'assets/geometry/geometry_interfaces.md',
+                  'vlm_geom.py':'harness/helpers/vlm_geom.py',
+                  'observation_io.py':'harness/helpers/observation_io.py'}
+
+
+def verify_sandbox_assets(session):
+    hashes = {}
+    for name, source in SANDBOX_ASSETS.items():
+        actual = (session/'sandbox'/name).read_bytes()
+        if actual != (POLICY/source).read_bytes():
+            raise ValueError('Strict sandbox asset changed; requires provenance review: '+name)
+        hashes[name] = hashlib.sha256(actual).hexdigest()
+    return hashes
+
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
@@ -32,6 +47,7 @@ def match_journal(items, journal_ids):
 
 
 def audit_requests(session, expected_system):
+    assets = verify_sandbox_assets(session)
     package_name = '_q0_strict_request_audit'
     if package_name not in sys.modules:
         package = ModuleType(package_name)
@@ -135,7 +151,8 @@ def audit_requests(session, expected_system):
         attempts.append({'attempt':str(folder.relative_to(session)),
                          'request_sha256':archive.file_record(folder/'request.json')['sha256'],
                          'receipt_sha256':archive.file_record(folder/'cli_receipt.json')['sha256']})
-    return {'session':session.name, **counts, 'attempt_manifest_sha256':digest(attempts)}
+    return {'session':session.name, **counts, 'attempt_manifest_sha256':digest(attempts),
+            'sandbox_assets_sha256':assets}
 
 
 def main():

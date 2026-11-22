@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+import shutil
 import unittest
 
 SCRIPTS = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/experiments/push_t'
@@ -13,6 +14,17 @@ requests = importlib.import_module('audit_strict_requests')
 
 
 class StrictRequestAuditTests(unittest.TestCase):
+    def test_changed_actual_sandbox_material_requires_review(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'sandbox').mkdir()
+            for name, source in requests.SANDBOX_ASSETS.items():
+                shutil.copy2(audit.POLICY/source, root/'sandbox'/name)
+            self.assertEqual(len(requests.verify_sandbox_assets(root)), 4)
+            (root/'sandbox/geometry_reference.md').write_text('Extra task hints')
+            with self.assertRaises(ValueError):
+                requests.verify_sandbox_assets(root)
+
     def test_subsequence_preserves_provenance_with_duplicate_messages(self):
         a, b, c = ({'text':x} for x in ('a', 'b', 'c'))
         ids = {requests.digest(a):[0, 2], requests.digest(b):[1], requests.digest(c):[3]}
