@@ -1,0 +1,76 @@
+{
+  "status": "transport_interruption_recovered_formal_fifty_pending",
+  "source_service": "strict-formal-001",
+  "resumed_service": "strict-formal-002",
+  "job_id": "1854993",
+  "completed_inherited": 26,
+  "successes_inherited": 23,
+  "genuine_failed_layouts_retained": [
+    0,
+    6,
+    8
+  ],
+  "source_result_sha256": "3fc0a42de2f92c60304ff0499a493db557738fa8e784e68b4e83db466a2b9e3d",
+  "source_checkpoint_sha256": "f41c69223d0ad8456bd3c241e2b3b1c3114e44660e097b03181d22e80d3cca29",
+  "interrupted_episode_counted": false,
+  "native_result_tail_removed": false,
+  "pre_stop_remote_progress": {
+    "run_id": "db6caa5a51f642d48d2550c76904d80f",
+    "task": "push_T",
+    "updated_unix": 1795386192.44894,
+    "phase": "motion",
+    "control_steps_used": 48,
+    "control_steps_sent": 48,
+    "unacknowledged_actions": 0,
+    "control_step_limit": 600,
+    "control_steps_remaining": 552,
+    "control_time_remaining_s": 22.080000000000002,
+    "control_step_limit_source": "audited static task definition",
+    "sim_time_s": 1.92,
+    "control_dt_s": 0.04
+  },
+  "terminal_bridge_error": {
+    "error": "TimeoutError('SSH transport recovery window exhausted')",
+    "unix": 1795386333.6136384
+  },
+  "terminal_worker": {
+    "returncode": 1,
+    "job_id": "1854993",
+    "started_unix": 1795359255.655084,
+    "finished_unix": 1795386504.4545896
+  },
+  "interrupted_raw_input_audit": {
+    "mode": "strict_official",
+    "asset_sha256": {
+      "assets/prompts/strict_prompt.md": "dea711acae3f6aeed615a796dd4ea4f9e8edfcb952bf839f9ad3e2506869432a",
+      "assets/prompts/checkpoint_prompt.md": "1ed9f6749571533ba21c88437ef76cbe48e67eb043313af6bab790653982ff59",
+      "assets/geometry/strict_geometry.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+      "assets/geometry/geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+      "harness/helpers/vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+      "harness/helpers/observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+    },
+    "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+    "episodes_checked": 1,
+    "observations_checked": 1,
+    "episodes": [
+      {
+        "session": "db6caa5a51f642d48d2550c76904d80f",
+        "observations": 1,
+        "closed": false
+      }
+    ],
+    "input_checks_passed": true,
+    "runtime_verified": true,
+    "limitation": "Input-boundary audit; no claim about pretrained knowledge or official certification."
+  },
+  "interrupted_sandbox_assets_sha256": {
+    "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+    "geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+    "vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+    "observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+  },
+  "deployment_identical": true,
+  "layout_identical": true,
+  "q0_tests_passed": 80,
+  "policy_prompt_controller_budget_unchanged": true
+}

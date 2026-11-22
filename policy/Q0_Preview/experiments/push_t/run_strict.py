@@ -11,6 +11,7 @@ import time
 
 from audit_strict import audit
 from report_pair import outcomes
+from strict_resume import audit_view, resume_evidence
 
 
 def main():
@@ -27,9 +28,12 @@ def main():
     p.add_argument('--smoke', action='store_true')
     p.add_argument('--validated-smoke', type=Path)
     p.add_argument('--validated-inputs', type=Path)
+    p.add_argument('--resume-from', type=Path, help='Terminal transport-interrupted strict run; preserve its audited native prefix')
     args = p.parse_args()
     if not args.smoke and not (args.validated_smoke and args.validated_inputs):
         p.error('Formal run requires --validated-smoke and --validated-inputs')
+    if args.smoke and args.resume_from:
+        p.error('Smoke runs cannot inherit formal results')
     policy = Path(__file__).resolve().parents[2]
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -61,9 +65,9 @@ def main():
             print('MANAGEMENT_RETRY '+str(attempt)+' '+error, flush=True)
             time.sleep(min(15, attempt*2))
 
-    def control(action, **kwargs):
+    def control(action, name=None, **kwargs):
         return remote(['python3', helper, '--root', args.remote_root],
-                      dict(action=action, benchmark_name='benchmark', name=root.name, **kwargs))
+                      dict(action=action, benchmark_name='benchmark', name=name or root.name, **kwargs))
 
     queue = remote(['python3', '-c',
         'import subprocess,json; print(json.dumps(subprocess.check_output('
@@ -100,6 +104,30 @@ def main():
             raise ValueError('Sandbox assets changed since input preflight')
     for name, value in [('layouts', layouts), ('deployment', deployment), ('input-audit', local_assets)]:
         (root/(name+'.json')).write_text(json.dumps(value, indent=2))
+    inherited = []
+    if args.resume_from:
+        source = args.resume_from.resolve()
+        if (json.loads((source/'deployment.json').read_text()) != deployment
+                or json.loads((source/'layouts.json').read_text()) != layouts
+                or json.loads((source/'input-audit.json').read_text())['asset_sha256'] != local_assets['asset_sha256']):
+            raise ValueError('Resume deployment, layouts or strict inputs changed')
+        prior = control('status', name=source.name)
+        (root/'resume-source-status.json').write_text(json.dumps(prior, indent=2))
+        if prior.get('worker_result') is None or 'returncode' not in prior['worker_result']:
+            raise ValueError('Source worker must be terminal before resuming')
+        evidence = resume_evidence(source, prior['evaluator_result'])
+        inherited = [Path(p) for p in evidence['inherited_sessions']]
+        audit(inherited)
+        request = dict(root=args.remote_root, benchmark_name='benchmark',
+                       source_service=source.name, target_service=root.name)
+        if evidence['exclude_native_tail']:
+            request['exclude_infrastructure_tail'] = evidence['transport_interruption']
+        record = remote(['python3', '-c', Path(__file__).with_name('native_resume.py').read_text()], request)
+        if record['completed'] != evidence['completed']:
+            raise ValueError('Native resumed prefix differs from closed archives')
+        lineage = dict(stages={'strict_official':dict(native=record,
+            initial_completed=evidence['completed'], **evidence)})
+        (root/'resume-lineage.json').write_text(json.dumps(lineage, indent=2))
     env = os.environ.copy()
     env['Q0_PREVIEW_TASK_INFORMATION_MODE'] = 'strict_official'
     for key in ('OPENAI_API_KEY', 'Q0_PREVIEW_API_KEY', 'OPENAI_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'):
@@ -136,7 +164,7 @@ def main():
         bridge.wait(timeout=90)
         if bridge.returncode:
             raise RuntimeError('Strict bridge failed while closing')
-        sessions = sorted((root/'strict_official/sessions').glob('*'))
+        sessions = inherited+sorted((root/'strict_official/sessions').glob('*'))
         checked = audit(sessions)
         (root/'final-input-audit.json').write_text(json.dumps(checked, indent=2))
         if args.smoke:
@@ -152,6 +180,7 @@ def main():
             result.write_text(json.dumps(status['evaluator_result'], indent=2))
             if len(outcomes(result)) != 50 or len(sessions) != 50 or not all(e['closed'] for e in checked['episodes']):
                 raise ValueError('Exactly 50 closed native cases required')
+            audit_view(root, sessions)
             result.replace(root/'strict-result.json')
         print('STRICT_SMOKE_COMPLETE' if args.smoke else 'STRICT_FIFTY_COMPLETE', flush=True)
     except BaseException as exc:
