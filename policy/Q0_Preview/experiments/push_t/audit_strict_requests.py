@@ -20,6 +20,37 @@ SANDBOX_ASSETS = {'geometry_reference.md':'assets/geometry/strict_geometry.md',
                   'geometry_interfaces.md':'assets/geometry/geometry_interfaces.md',
                   'vlm_geom.py':'harness/helpers/vlm_geom.py',
                   'observation_io.py':'harness/helpers/observation_io.py'}
+REVIEWED_GENERIC_CLI_WRAPPERS = {
+    '29dad5ed6993c5e717376e0a1c84d54ab60ee593510916ac6cee4295e803315d':
+        'Generic read-only permissions, restricted network and approval never',
+    '7f45d7d6986a761101d46d185824ce65c321ca0f02cea7497fc46d60ffae417b':
+        'Generic Default collaboration mode and request_user_input availability',
+}
+
+
+def verify_recorded_wrappers(wrappers, requested_instructions):
+    """Only reviewed task-independent CLI additions or the supplied prompt itself.
+
+    Empty capture means no wrapper items were recorded, not that provider-side
+    hidden prompts have been inspected. Do not equate this with such a claim.
+    """
+    counts = {'requested_instructions':0, 'reviewed_generic_blocks':0}
+    if not isinstance(wrappers, list):
+        raise ValueError('Unexpected CLI wrapper capture type')
+    for item in wrappers:
+        if item.get('role') not in ('system', 'developer') or item.get('type') != 'message':
+            raise ValueError('Unexpected CLI wrapper item')
+        for block in item.get('content', []):
+            if block.get('type') not in ('input_text', 'output_text') or not isinstance(block.get('text'), str):
+                raise ValueError('Unexpected CLI wrapper content')
+            text = block['text']
+            if text == requested_instructions:
+                counts['requested_instructions'] += 1
+            elif hashlib.sha256(text.encode()).hexdigest() in REVIEWED_GENERIC_CLI_WRAPPERS:
+                counts['reviewed_generic_blocks'] += 1
+            else:
+                raise ValueError('Unreviewed CLI system/developer text; inspect its provenance')
+    return counts
 
 
 def verify_sandbox_assets(session):
@@ -72,7 +103,8 @@ def audit_requests(session, expected_system):
                 images.add(hashlib.sha256(path.read_bytes()).hexdigest())
     counts = {'calls': 0, 'planning_calls': 0, 'checkpoint_calls': 0, 'images_verified': 0,
               'planning_contexts_reconstructed': 0, 'checkpoint_contexts_reconstructed': 0,
-              'planning_contexts_matched_to_episode_journal': 0}
+              'planning_contexts_matched_to_episode_journal': 0,
+              'recorded_cli_wrapper_files_verified':0, 'recorded_generic_wrapper_blocks_verified':0}
     attempts = []
     checkpoint_prompt = (POLICY/'assets/prompts/checkpoint_prompt.md').read_text()
     for folder in sorted((session/'api').glob('*/attempt_*')):
@@ -80,6 +112,10 @@ def audit_requests(session, expected_system):
         if manifest['complete_json_response'] is not True:
             raise ValueError('Incomplete model attempt requires separate infrastructure review: '+str(folder))
         request = json.loads((folder/'request.json').read_text())
+        wrappers = json.loads((folder/'cli-context-wrappers.json').read_text())
+        checked_wrappers = verify_recorded_wrappers(wrappers, request['instructions'])
+        counts['recorded_cli_wrapper_files_verified'] += 1
+        counts['recorded_generic_wrapper_blocks_verified'] += checked_wrappers['reviewed_generic_blocks']
         receipt = json.loads((folder/'cli_receipt.json').read_text())
         selection_path = folder/'context_selection.json'
         selection = json.loads(selection_path.read_text()) if selection_path.exists() else None

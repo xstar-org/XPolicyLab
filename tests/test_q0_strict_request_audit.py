@@ -6,6 +6,7 @@ import sys
 import tempfile
 import shutil
 import unittest
+from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/experiments/push_t'
 sys.path.insert(0, str(SCRIPTS))
@@ -14,6 +15,20 @@ requests = importlib.import_module('audit_strict_requests')
 
 
 class StrictRequestAuditTests(unittest.TestCase):
+    def test_unreviewed_cli_developer_instructions_require_review(self):
+        def wrapper(text):
+            return [{'type':'message', 'role':'developer',
+                     'content':[{'type':'input_text', 'text':text}]}]
+        self.assertEqual(requests.verify_recorded_wrappers([], 'audited prompt')['requested_instructions'], 0)
+        self.assertEqual(requests.verify_recorded_wrappers(wrapper('audited prompt'),
+                         'audited prompt')['requested_instructions'], 1)
+        with self.assertRaises(ValueError):
+            requests.verify_recorded_wrappers(wrapper('extra task hint'), 'audited prompt')
+        with patch.dict(requests.REVIEWED_GENERIC_CLI_WRAPPERS,
+                        {requests.hashlib.sha256(b'generic permissions').hexdigest():'reviewed test fixture'}):
+            self.assertEqual(requests.verify_recorded_wrappers(wrapper('generic permissions'),
+                             'audited prompt')['reviewed_generic_blocks'], 1)
+
     def test_changed_actual_sandbox_material_requires_review(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

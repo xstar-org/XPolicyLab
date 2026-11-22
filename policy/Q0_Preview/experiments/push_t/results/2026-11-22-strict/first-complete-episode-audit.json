@@ -7,6 +7,8 @@
   "planning_contexts_reconstructed": 0,
   "checkpoint_contexts_reconstructed": 15,
   "planning_contexts_matched_to_episode_journal": 55,
+  "recorded_cli_wrapper_files_verified": 70,
+  "recorded_generic_wrapper_blocks_verified": 30,
   "attempt_manifest_sha256": "ef42c733804354f9f54534c0652b7259c8b799ae20630b861be5a05b8b8329c5",
   "sandbox_assets_sha256": {
     "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
