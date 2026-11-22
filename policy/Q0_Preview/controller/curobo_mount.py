@@ -41,6 +41,8 @@ class TableMountCollisionFilter:
 
 def allow_fixed_table_mount(scene_collision, kinematics, scene_model):
     """Install before warmup/CUDA capture; only valid for this table-only scene."""
+    if scene_model == {'cuboid': {}}:
+        return  # Strict arm has no privileged scene collision geometry.
     if set(scene_model) != {'cuboid'} or set(scene_model['cuboid']) != {'table'}:
         raise ValueError('Table mount exemption requires a table-only collision scene')
     if isinstance(scene_collision.checker, TableMountCollisionFilter):

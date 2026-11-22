@@ -5,10 +5,10 @@ umask 077
 : "${Q0_BENCH_ROOT:?Set the isolated RoboDojo workspace}"
 : "${Q0_CLUSTER_PREFIX:?Set a controller/simulator Python prefix}"
 : "${Q0_REMOTE_RUN_DIR:?Set a new controller service archive directory}"
-: "${Q0_PREVIEW_TASK_INFORMATION_MODE:?Set original or official_only}"
+: "${Q0_PREVIEW_TASK_INFORMATION_MODE:?Set original, official_only or strict_official}"
 : "${ROBODOJO_RUN_ID:?Set a unique evaluator run ID}"
 : "${EVAL_NUM:?Set the episode count}"
-[[ "$Q0_PREVIEW_TASK_INFORMATION_MODE" == original || "$Q0_PREVIEW_TASK_INFORMATION_MODE" == official_only ]]
+[[ "$Q0_PREVIEW_TASK_INFORMATION_MODE" == original || "$Q0_PREVIEW_TASK_INFORMATION_MODE" == official_only || "$Q0_PREVIEW_TASK_INFORMATION_MODE" == strict_official ]]
 [[ ! -e "$Q0_REMOTE_RUN_DIR" ]]
 export PATH="$Q0_CLUSTER_PREFIX/bin:$PATH"
 export PYTHONPATH="${Q0_PREVIEW_CONTROLLER_PYTHONPATH:+$Q0_PREVIEW_CONTROLLER_PYTHONPATH:}$Q0_BENCH_ROOT:$Q0_BENCH_ROOT/XPolicyLab"

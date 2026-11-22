@@ -78,6 +78,15 @@ description and public scoring without the task reference file. Select
 [experiment protocol and Slurm launcher](experiments/push_t/README.md) for the
 50+50 layout pairing, isolation requirements and result collection.
 
+The old `official_only` mode retained default home tolerances and historical
+geometry-probe notes; it is not a fully cleaned baseline. Set
+`Q0_PREVIEW_TASK_INFORMATION_MODE=strict_official` and use
+`config/agent.gpt62sol.strict.json` for the independent stricter experiment.
+It removes these fields before raw observation publication, uses a separate
+interface-only prompt and robot-only geometry document, and disables fixed
+table collision geometry. See the [strict audit](experiments/push_t/STRICT_AUDIT_zh.md)
+for the complete retained-input inventory and experiment status.
+
 Default budgets remain:
 
 

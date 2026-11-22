@@ -1,0 +1,14 @@
+{
+  "provider": "codex_cli",
+  "model": "gpt-6.2-sol",
+  "codex_executable": "codex",
+  "codex_service_tier": "fast",
+  "python_prefix": "",
+  "sandbox": "bwrap",
+  "context_history": "first_recent",
+  "context_max_bytes": 33554432,
+  "stream": false,
+  "python_memory_limit_mib": 16384,
+  "sandbox_image": "ubuntu:24.04",
+  "task_information_mode": "strict_official"
+}

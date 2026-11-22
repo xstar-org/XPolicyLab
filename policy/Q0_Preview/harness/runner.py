@@ -131,8 +131,10 @@ class Agent:
                                memory_limit_mib=config.get('python_memory_limit_mib', 16384))
         shutil.copy2(POLICY/'harness/helpers/vlm_geom.py', self.sandbox.work/'vlm_geom.py')
         shutil.copy2(POLICY/'harness/helpers/observation_io.py', self.sandbox.work/'observation_io.py')
-        shutil.copy2(POLICY/'assets/geometry/calibration_notes.md', self.sandbox.work/'geometry_reference.md')
-        for name in ('geometry_interfaces.md', 'geometry_evidence.md'):
+        strict = config.get('task_information_mode') == 'strict_official'
+        reference = 'strict_geometry.md' if strict else 'calibration_notes.md'
+        shutil.copy2(POLICY/'assets/geometry'/reference, self.sandbox.work/'geometry_reference.md')
+        for name in (('geometry_interfaces.md',) if strict else ('geometry_interfaces.md', 'geometry_evidence.md')):
             shutil.copy2(POLICY/'assets/geometry'/name, self.sandbox.work/name)
         self._ensure_history()
 
@@ -147,7 +149,8 @@ class Agent:
         if not hasattr(self, '_frozen_prefix'):
             system = planning_prompt((POLICY/'assets/prompts/prompt.md').read_text(),
                                      self.config.get('task_information_mode', 'original'))
-            system += '\n'+(POLICY/'assets/prompts/geometry_context.md').read_text()
+            if self.config.get('task_information_mode') != 'strict_official':
+                system += '\n'+(POLICY/'assets/prompts/geometry_context.md').read_text()
             runtime = getattr(self.sandbox, 'runtime', {})
             if runtime:
                 system += '\nActual Python environment: '+json.dumps(runtime, separators=(',', ':'))+'\n'
@@ -169,6 +172,13 @@ class Agent:
 
     def prepare(self, req):
         source, manifest, obs = stage_observation(self.root, self.sandbox, req)
+        if self.config.get('task_information_mode') == 'strict_official':
+            from ..runtime.strict_information import validate_published
+            validate_published(obs)
+            for name in ('task_reference.json', 'geometry_evidence.md'):
+                path = self.sandbox.work/name
+                if path.exists() or path.is_symlink():
+                    raise ValueError('Restricted strict workspace file: '+name)
         # The same current-task definitions are injected in task_requirements and queryable here.
         stage_task_reference(self.sandbox.work, req['task'],
                              self.config.get('task_information_mode', 'original'))

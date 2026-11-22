@@ -487,7 +487,8 @@ class CuroboPlanner:
             "load_dynamics": bool(yml_data.get("load_dynamics", False)),
         }
 
-        scene_model = {"cuboid": {"table": table_collision_cuboid(table_height)}}
+        scene_model = ({"cuboid": {}} if table_height is None else
+                       {"cuboid": {"table": table_collision_cuboid(table_height)}})
         return robot_cfg_v2, scene_model
 
     def _build_motion_planner_cfg(self, max_batch_size):

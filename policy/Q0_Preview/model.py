@@ -62,7 +62,8 @@ class Model(ModelTemplate):
         else:
             self.obs = clean_observation(obs,self.dims)
             if self.backend is None:
-                self.backend = Backend(self.obs,self.control_step_limit)
+                self.backend = Backend(self.obs,self.control_step_limit,
+                                       strict_information=self.model_cfg.get('task_information_mode') == 'strict_official')
             else:
                 self.backend.update(self.obs)
         self.fresh = True

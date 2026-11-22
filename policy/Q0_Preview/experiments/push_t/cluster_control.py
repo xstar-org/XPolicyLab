@@ -85,7 +85,7 @@ def run(root, message):
         return dict(stopped=name)
     if action == 'submit':
         mode, count = message['mode'], message['episodes']
-        if mode not in ('original', 'official_only') or type(count) is not int or count not in (1, 50):
+        if mode not in ('original', 'official_only', 'strict_official') or type(count) is not int or count not in (1, 50):
             raise ValueError('Invalid paired experiment mode/count')
         if message.get('overlap_validation') and count != 1:
             raise ValueError('Overlapping validation is limited to one episode')

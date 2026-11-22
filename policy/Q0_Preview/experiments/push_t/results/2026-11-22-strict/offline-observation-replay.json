@@ -1,0 +1,6 @@
+{
+  "input_episodes": 50,
+  "old_observations_projected_and_checked": 1542,
+  "status": "pass",
+  "scope": "Offline regression replay, not new runtime verification or a new success-rate experiment"
+}

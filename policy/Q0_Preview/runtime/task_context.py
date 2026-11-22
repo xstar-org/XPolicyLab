@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import re
 
-TASK_INFORMATION_MODES = ('original', 'official_only')
+TASK_INFORMATION_MODES = ('original', 'official_only', 'strict_official')
 ASSETS = Path(__file__).parent.parent / 'assets/tasks'
 
 
@@ -15,12 +15,13 @@ def information_mode(value='original'):
 
 def task_card(name, mode='original'):
     mode = information_mode(mode)
-    if mode == 'official_only':
+    if mode in ('official_only', 'strict_official'):
         data = json.loads((ASSETS/'official_task_descriptions.json').read_text())
         if name not in data['cards']:
             raise ValueError(f'No frozen official description for {name!r}; refusing fallback')
         card = data['cards'][name]
-        return dict(requirements=card['description'] + '\n\nPublic scoring:\n' + '\n'.join(card['scoring']),
+        return dict(requirements=(card['description'] if mode == 'strict_official' else
+                                  card['description'] + '\n\nPublic scoring:\n' + '\n'.join(card['scoring'])),
                     finish='', return_home_required=card['return_home_required'],
                     control_step_limit=card['control_step_limit'])
     return json.loads((ASSETS/'task_cards.json').read_text())['cards'][name]
@@ -42,7 +43,7 @@ def task_step_limit(name, configured_limit=None, mode='original'):
 
 def task_reference(name, mode='original'):
     """Return only this task's public definitions, never live reward or object state."""
-    if information_mode(mode) == 'official_only':
+    if information_mode(mode) in ('official_only', 'strict_official'):
         raise ValueError('Task reference is disabled in official_only mode')
     data = json.loads((ASSETS/'task_reference.json').read_text())
     if name not in data['cards']:
@@ -56,7 +57,7 @@ def task_reference(name, mode='original'):
 def task_context(name, benchmark_root=None, verify=False, mode='original'):
     """Static task cards; never read live task/reward source or state."""
     card = task_card(name, mode)
-    if information_mode(mode) == 'official_only':
+    if information_mode(mode) in ('official_only', 'strict_official'):
         return card['requirements']
     reference = task_reference(name)
     text = card['requirements'] + '\n' + card['finish']
@@ -76,7 +77,7 @@ def task_context(name, benchmark_root=None, verify=False, mode='original'):
 def stage_task_reference(work, name, mode='original'):
     """Only original runs expose the restricted reference; reject stale workspaces."""
     path = Path(work)/'task_reference.json'
-    if information_mode(mode) == 'official_only':
+    if information_mode(mode) in ('official_only', 'strict_official'):
         if path.exists() or path.is_symlink():
             raise RuntimeError('Restricted reference in official_only workspace; use a fresh workspace')
         return
@@ -87,6 +88,8 @@ def planning_prompt(text, mode='original'):
     """Remove the reference-file and task-strategy instructions from the strict arm."""
     if information_mode(mode) == 'original':
         return text
+    if information_mode(mode) == 'strict_official':
+        return (ASSETS.parent/'prompts/strict_prompt.md').read_text()
     start = text.index('Read `instruction` and `task_requirements`.')
     end = text.index('\n## Gripper pose reference points', start)
     return (text[:start] + 'Read `instruction` and `task_requirements`. The latter contains only the '
