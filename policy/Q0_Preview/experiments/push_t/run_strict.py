@@ -11,7 +11,7 @@ import time
 
 from audit_strict import audit
 from report_pair import outcomes
-from strict_resume import audit_view, resume_evidence
+from strict_resume import audit_view, resume_evidence, storage_resume_evidence
 
 
 def main():
@@ -29,11 +29,14 @@ def main():
     p.add_argument('--validated-smoke', type=Path)
     p.add_argument('--validated-inputs', type=Path)
     p.add_argument('--resume-from', type=Path, help='Terminal transport-interrupted strict run; preserve its audited native prefix')
+    p.add_argument('--storage-failure-proof', type=Path, help='Trusted storage error/partial-array/node-write certificate for this resume')
     args = p.parse_args()
     if not args.smoke and not (args.validated_smoke and args.validated_inputs):
         p.error('Formal run requires --validated-smoke and --validated-inputs')
     if args.smoke and args.resume_from:
         p.error('Smoke runs cannot inherit formal results')
+    if args.storage_failure_proof and not args.resume_from:
+        p.error('Storage failure proof requires --resume-from')
     policy = Path(__file__).resolve().parents[2]
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -115,7 +118,8 @@ def main():
         (root/'resume-source-status.json').write_text(json.dumps(prior, indent=2))
         if prior.get('worker_result') is None or 'returncode' not in prior['worker_result']:
             raise ValueError('Source worker must be terminal before resuming')
-        evidence = resume_evidence(source, prior['evaluator_result'])
+        evidence = (storage_resume_evidence(source, prior['evaluator_result'], args.storage_failure_proof)
+                    if args.storage_failure_proof else resume_evidence(source, prior['evaluator_result']))
         inherited = [Path(p) for p in evidence['inherited_sessions']]
         audit(inherited)
         request = dict(root=args.remote_root, benchmark_name='benchmark',
@@ -154,6 +158,9 @@ def main():
                 raise RuntimeError('Strict agent bridge exited unexpectedly')
             status = control('status')
             (root/'status.json').write_text(json.dumps(status, indent=2))
+            for endfile in (root/'strict_official/sessions').glob('*/END.json'):
+                if json.loads(endfile.read_text()).get('reason') == 'policy_error':
+                    raise RuntimeError('Strict controller policy_error; inspect native outcomes and infrastructure before continuing')
             if status['worker_result'] is not None:
                 if status['worker_result'].get('job_id') != args.job_id or status['worker_result'].get('returncode') != 0:
                     raise RuntimeError('Strict simulation worker failed or used another allocation')

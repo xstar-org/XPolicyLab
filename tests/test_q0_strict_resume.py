@@ -1,5 +1,7 @@
 """Transport recovery must preserve every completed outcome and its provenance."""
 import importlib.util
+import base64
+import hashlib
 import json
 from pathlib import Path
 import sys
@@ -82,3 +84,63 @@ class StrictResumeTests(unittest.TestCase):
             (episodes[-1]/'END.json').write_text('{"final":true}')
             view = resume.audit_view(root, episodes)
             self.assertEqual({p.resolve() for p in view.iterdir()}, set(episodes))
+
+    def storage_fixture(self, root):
+        native = self.fixture(root)
+        (root/'strict_official/sessions/2/END.json').write_text('{"final":true,"reason":"policy_error"}')
+        files = {}
+        for key, value in [('native_result', json.dumps(native)),
+                           ('server_log', 'np.save write_array OSError: 921600 requested and 0 written'),
+                           ('node_write_probe', json.dumps(dict(returncode=0, stdout=json.dumps(
+                               dict(node='test-compute', checks=[dict(ok=True)]*3)))) )]:
+            path = root/(key+'.evidence')
+            path.write_text(value)
+            files[key] = dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+        meta = b"{'descr': '|u1', 'fortran_order': False, 'shape': (480, 640, 3), }\n"
+        header = b'\x93NUMPY\x01\x00'+len(meta).to_bytes(2, 'little')+meta
+        cert = dict(source_service=root.name, interrupted_sessions=['2'], **files,
+                    truncated_npy_files=[dict(session='2', size_bytes=len(header),
+                        header_base64=base64.b64encode(header).decode(), sha256=hashlib.sha256(header).hexdigest(),
+                        path='runs/'+root.name+'/sessions/2/observations/obs_1/cam_head.rgb.npy')])
+        path = root/'storage-certificate.json'
+        path.write_text(json.dumps(cert))
+        return native, cert, path
+
+    def test_storage_resume_keeps_native_failure_and_never_removes_outcomes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native, cert, path = self.storage_fixture(root)
+            before = {str(p):p.read_bytes() for p in root.rglob('*') if p.is_file()}
+            result = resume.storage_resume_evidence(root, native, path)
+            self.assertEqual(result['completed'], 2)
+            self.assertEqual(result['storage_interruption']['native_outcomes_removed'], 0)
+            self.assertEqual([Path(p).name for p in result['inherited_sessions']], ['0', '1'])
+            self.assertEqual(before, {str(p):p.read_bytes() for p in root.rglob('*') if p.is_file()})
+            changed = json.loads(json.dumps(native));changed['details']['0']['success'] = True
+            with self.assertRaises(ValueError):resume.storage_resume_evidence(root, changed, path)
+
+    def test_storage_resume_requires_partial_file_for_each_closed_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native, cert, path = self.storage_fixture(root)
+            records = cert['truncated_npy_files']
+            cert['truncated_npy_files'] = []
+            path.write_text(json.dumps(cert))
+            with self.assertRaises(ValueError):resume.storage_resume_evidence(root, native, path)
+            cert['truncated_npy_files'] = records
+            path.write_text(json.dumps(cert))
+            (root/'strict_official/sessions/2/END.json').write_text('{"final":true,"reason":"client_closed"}')
+            with self.assertRaises(ValueError):resume.storage_resume_evidence(root, native, path)
+
+    def test_storage_resume_rejects_changed_evidence_or_failing_node_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            native, cert, path = self.storage_fixture(root)
+            log = Path(cert['server_log']['path']);log.write_text('changed')
+            with self.assertRaises(ValueError):resume.storage_resume_evidence(root, native, path)
+            log.write_text('np.save write_array OSError: 921600 requested and 0 written')
+            probe = Path(cert['node_write_probe']['path'])
+            probe.write_text(json.dumps(dict(returncode=0, stdout=json.dumps(dict(node='test-compute', checks=[dict(ok=False)]*3)))))
+            cert['node_write_probe']['sha256'] = hashlib.sha256(probe.read_bytes()).hexdigest()
+            path.write_text(json.dumps(cert))
+            with self.assertRaises(ValueError):resume.storage_resume_evidence(root, native, path)

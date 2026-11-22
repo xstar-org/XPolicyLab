@@ -1,0 +1,66 @@
+{
+  "status": "storage_interruption_recovered_formal_fifty_pending",
+  "source_service": "strict-formal-002",
+  "resumed_service": "strict-formal-003",
+  "job_id": "1854993",
+  "completed_inherited": 28,
+  "successes_inherited": 25,
+  "genuine_failed_layouts_retained": [
+    0,
+    6,
+    8
+  ],
+  "source_native_result_sha256": "684382a87fe0de052d13f0f1f932881165e2bc26479c216ce368645f97f2be1a",
+  "source_checkpoint_sha256": "3ec23806b6be1229db0ce9c8844f56a3b37e2cb009434795d5178fe591dda16b",
+  "native_outcomes_removed": 0,
+  "interrupted_sessions": [
+    "d73dd000f27043c0b72ba134d8e46a57",
+    "ca16d132ce0a45149ad67963f1f1e933",
+    "c80fb3bbc67849da81625d0f05b65a18"
+  ],
+  "failure_signature": "Episode.publish -> np.save -> write_array -> OSError: 921600 requested and 0 written",
+  "server_error_log_sha256": "8a59c1eb239dd41c313195b8b03aa3e80b5547cc8b2d00dba88e367f6006cb6e",
+  "partial_rgb_arrays": [
+    {
+      "session": "d73dd000f27043c0b72ba134d8e46a57",
+      "observation": "obs_00016",
+      "actual_bytes": 128,
+      "expected_bytes": 921728,
+      "sha256": "1030c79cdfba5046660918542d50584c04a3489831c363d23ca636adf272b6f6"
+    },
+    {
+      "session": "d73dd000f27043c0b72ba134d8e46a57",
+      "observation": "obs_00015",
+      "actual_bytes": 128,
+      "expected_bytes": 921728,
+      "sha256": "1030c79cdfba5046660918542d50584c04a3489831c363d23ca636adf272b6f6"
+    },
+    {
+      "session": "ca16d132ce0a45149ad67963f1f1e933",
+      "observation": "obs_00002",
+      "actual_bytes": 128,
+      "expected_bytes": 921728,
+      "sha256": "1030c79cdfba5046660918542d50584c04a3489831c363d23ca636adf272b6f6"
+    }
+  ],
+  "node_write_validation": {
+    "node": "wqd10nba07g8",
+    "rounds": 12,
+    "all_saved_and_loaded": true,
+    "npy_bytes_each": 921728
+  },
+  "terminal_source_worker": {
+    "returncode": 1,
+    "job_id": "1854993",
+    "started_unix": 1795386720.7656343,
+    "finished_unix": 1795389716.4754932
+  },
+  "native_count_after_source_stop": 28,
+  "valid_input_audits_retained": 28,
+  "storage_failed_input_audits_preserved_separately": 2,
+  "deployment_identical": true,
+  "layouts_identical": true,
+  "q0_tests_passed": 83,
+  "policy_inputs_model_controller_budget_unchanged": true,
+  "limitation": "Filesystem had free space and same-node writes later passed; the underlying transient I/O cause is not established."
+}
