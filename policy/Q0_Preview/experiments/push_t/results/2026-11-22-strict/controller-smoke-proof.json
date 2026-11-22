@@ -1,0 +1,42 @@
+{
+  "job_id": "1854993",
+  "worker_returncode": 0,
+  "deployment": {
+    "benchmark_name": "benchmark",
+    "file_count": 380,
+    "sha256": "9cfebba7d6d84f457919547942a0c9e366ba8a4f732c2c12370637cc8cff936e"
+  },
+  "asset_sha256": {
+    "assets/prompts/strict_prompt.md": "dea711acae3f6aeed615a796dd4ea4f9e8edfcb952bf839f9ad3e2506869432a",
+    "assets/prompts/checkpoint_prompt.md": "1ed9f6749571533ba21c88437ef76cbe48e67eb043313af6bab790653982ff59",
+    "assets/geometry/strict_geometry.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+    "assets/geometry/geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+    "harness/helpers/vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+    "harness/helpers/observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+  },
+  "raw_observations_audited": 6,
+  "end": {
+    "run_id": "580630c0c5c74abbab8bf75106c9cd9a",
+    "task": "push_T",
+    "reason": "integration_smoke_complete",
+    "final": true,
+    "control_steps": 599,
+    "control_steps_used": 599,
+    "control_steps_sent": 600,
+    "unacknowledged_actions": 1,
+    "control_step_limit": 600,
+    "control_steps_remaining": 1,
+    "control_time_remaining_s": 0.04,
+    "control_step_limit_source": "audited static task definition",
+    "sim_time_s": 23.96,
+    "control_dt_s": 0.04,
+    "groups_completed": 4,
+    "wall_seconds": 137.76716989651322,
+    "official_result": "not available to policy"
+  },
+  "checkpoint_decisions": [
+    "CONTINUE",
+    "REPLAN"
+  ],
+  "included_in_formal_fifty": false
+}

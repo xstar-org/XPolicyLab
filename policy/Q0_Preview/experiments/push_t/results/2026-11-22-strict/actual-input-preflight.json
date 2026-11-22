@@ -1,0 +1,23 @@
+{
+  "passed": true,
+  "model_calls": 0,
+  "raw_observation_checked": true,
+  "sandbox_assets_sha256": {
+    "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+    "geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+    "vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+    "observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+  },
+  "system_sha256": "f12127e74eb00d29fbd0f1539c604296a289201d34461f434fb507d95128864b",
+  "tools": [
+    "submit_trajectory",
+    "run_python",
+    "view_image",
+    "end_attempt"
+  ],
+  "model": "gpt-6.2-sol",
+  "reasoning": {
+    "effort": "xhigh"
+  },
+  "source_episode": "580630c0c5c74abbab8bf75106c9cd9a"
+}

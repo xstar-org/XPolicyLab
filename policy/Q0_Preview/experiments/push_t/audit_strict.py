@@ -49,8 +49,10 @@ def audit(sessions):
             if observation['task_requirements'] != expected:
                 raise ValueError('Changed task description: '+str(path))
         count += len(observations)
+        end_path = session/'END.json'
+        end = json.loads(end_path.read_text()) if end_path.exists() else {}
         episodes.append({'session': session.name, 'observations': len(observations),
-                         'closed': (session/'END.json').exists()})
+                         'closed': end.get('final') is True})
     return {'mode': 'strict_official', 'asset_sha256': manifest,
             'task_description_sha256': hashlib.sha256(expected.encode()).hexdigest(),
             'episodes_checked': len(episodes), 'observations_checked': count,

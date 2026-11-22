@@ -1,0 +1,12 @@
+{
+  "session": "first-request-immutable-snapshot",
+  "calls": 1,
+  "planning_calls": 1,
+  "checkpoint_calls": 0,
+  "images_verified": 3,
+  "planning_contexts_reconstructed": 0,
+  "checkpoint_contexts_reconstructed": 0,
+  "planning_contexts_matched_to_episode_journal": 1,
+  "attempt_manifest_sha256": "ca86bdb8e7a0e2d766ed083e310fd7bb94084a708fc2d9b331e62c17cf8ac0e0",
+  "scope": "First completed request immutable snapshot only; ordered same-episode journal provenance, no per-call window metadata in CLI archive"
+}
