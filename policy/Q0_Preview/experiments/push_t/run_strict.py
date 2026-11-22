@@ -77,7 +77,12 @@ def main():
     layouts = control('freeze')
     if layouts != json.loads(args.expected_layouts.read_text()):
         raise ValueError('Layouts differ from the previous 50 paired cases')
-    deployment = control('deployment', site_setup=args.site_setup)
+    deployment = control('deployment', site_setup=args.site_setup, include_overlay=True)
+    dependencies = remote(['env', 'PYTHONPATH='+args.remote_root+'/code/overlay',
+        args.cluster_prefix+'/bin/python', '-c',
+        'import json,websockets; from websockets.asyncio.server import serve; '
+        'print(json.dumps({"websockets":websockets.__version__}))'])
+    (root/'controller-dependencies.json').write_text(json.dumps(dependencies, indent=2))
     local_assets = audit([])
     if not args.smoke:
         gate = json.loads((args.validated_smoke/'SMOKE_PASSED.json').read_text())

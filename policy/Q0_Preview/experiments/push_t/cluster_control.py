@@ -43,6 +43,13 @@ def run(root, message):
         if not site.is_relative_to((root/'code').resolve()):
             raise ValueError('Site setup must belong to this private deployment')
         files['site_setup'] = hashlib.sha256(site.read_bytes()).hexdigest()
+        if message.get('include_overlay'):
+            overlay = root/'code/overlay'
+            if not overlay.is_dir():
+                raise ValueError('Strict controller dependency overlay is missing')
+            for path in sorted(overlay.rglob('*')):
+                if path.is_file() and '__pycache__' not in path.parts:
+                    files['overlay/'+str(path.relative_to(overlay))] = hashlib.sha256(path.read_bytes()).hexdigest()
         return dict(benchmark_name=benchmark_name, file_count=len(files),
             sha256=hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest())
     if action == 'freeze':
