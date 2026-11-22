@@ -26,9 +26,10 @@ def main():
     p.add_argument('--expected-layouts', type=Path, required=True)
     p.add_argument('--smoke', action='store_true')
     p.add_argument('--validated-smoke', type=Path)
+    p.add_argument('--validated-inputs', type=Path)
     args = p.parse_args()
-    if not args.smoke and not args.validated_smoke:
-        p.error('Formal run requires --validated-smoke')
+    if not args.smoke and not (args.validated_smoke and args.validated_inputs):
+        p.error('Formal run requires --validated-smoke and --validated-inputs')
     policy = Path(__file__).resolve().parents[2]
     root = args.root.resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
@@ -39,11 +40,26 @@ def main():
     helper = remote_policy+'/experiments/push_t/cluster_control.py'
 
     def remote(argv, message=None):
-        result = subprocess.run(ssh+[shlex.join(argv)], input=json.dumps(message) if message else None,
-                                text=True, capture_output=True, timeout=60)
-        if result.returncode:
-            raise RuntimeError('Cluster RPC failed: '+result.stderr[-2000:])
-        return json.loads(result.stdout)
+        # Every RPC here is a read or an idempotent queue/STOP write. A management
+        # timeout is not evidence that the live simulator stopped.
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                result = subprocess.run(ssh+[shlex.join(argv)], input=json.dumps(message) if message else None,
+                                        text=True, capture_output=True, timeout=60)
+            except subprocess.TimeoutExpired:
+                error = 'management SSH observation timeout'
+            else:
+                if result.returncode == 0:
+                    return json.loads(result.stdout)
+                if result.returncode != 255:
+                    raise RuntimeError('Cluster RPC failed: '+result.stderr[-2000:])
+                error = result.stderr[-1000:]
+            (root/'management-retry.json').write_text(json.dumps(dict(attempt=attempt,
+                unix=time.time(), error=error, action=(message or {}).get('action'))))
+            print('MANAGEMENT_RETRY '+str(attempt)+' '+error, flush=True)
+            time.sleep(min(15, attempt*2))
 
     def control(action, **kwargs):
         return remote(['python3', helper, '--root', args.remote_root],
@@ -67,6 +83,16 @@ def main():
         gate = json.loads((args.validated_smoke/'SMOKE_PASSED.json').read_text())
         if gate['deployment'] != deployment or gate['asset_sha256'] != local_assets['asset_sha256']:
             raise ValueError('Deployment or strict inputs changed since smoke validation')
+        inputs = json.loads((args.validated_inputs/'INPUT_PREFLIGHT_PASSED.json').read_text())
+        if not inputs.get('passed') or inputs.get('model_calls') != 0:
+            raise ValueError('Missing actual sandbox/payload preflight')
+        aliases = {'geometry_reference.md': 'assets/geometry/strict_geometry.md',
+                   'geometry_interfaces.md': 'assets/geometry/geometry_interfaces.md',
+                   'vlm_geom.py': 'harness/helpers/vlm_geom.py',
+                   'observation_io.py': 'harness/helpers/observation_io.py'}
+        if inputs['sandbox_assets_sha256'] != {name:local_assets['asset_sha256'][source]
+                                              for name,source in aliases.items()}:
+            raise ValueError('Sandbox assets changed since input preflight')
     for name, value in [('layouts', layouts), ('deployment', deployment), ('input-audit', local_assets)]:
         (root/(name+'.json')).write_text(json.dumps(value, indent=2))
     env = os.environ.copy()
