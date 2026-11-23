@@ -1,0 +1,34 @@
+{
+  "episodes": 50,
+  "observations": 1747,
+  "counts": {
+    "calls": 3785,
+    "planning_calls": 3203,
+    "checkpoint_calls": 582,
+    "images_verified": 114206,
+    "planning_contexts_reconstructed": 0,
+    "checkpoint_contexts_reconstructed": 582,
+    "planning_contexts_matched_to_episode_journal": 3203,
+    "recorded_cli_wrapper_files_verified": 3785,
+    "recorded_generic_wrapper_blocks_verified": 1164
+  },
+  "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+  "sandbox_assets_sha256": {
+    "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+    "geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+    "vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+    "observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+  },
+  "system_sha256": "f12127e74eb00d29fbd0f1539c604296a289201d34461f434fb507d95128864b",
+  "private_full_report_sha256": "5e4943cbe874bcce69245c8a16ac8f2eca4354d1d08b0dc5319bdd476dd0b82b",
+  "auditor_source_sha256": {
+    "audit_strict.py": "e887e7392a211f4afa874c7bd05ae4a90ecbbe0592a28e179a12c4f5c1b3ea42",
+    "audit_strict_requests.py": "3f0c567d717745287189f12c5921a5b8294664ffa454f7d8ef3b4c50685723ef"
+  },
+  "limitations": [
+    "No reconstruction of CLI unrecorded rolling-window selection; planning journal item provenance and ordering are verified",
+    "No claim about provider-internal hidden prompts or pretrained task knowledge",
+    "No official RoboDojo compliance certification",
+    "One task, seed1,50 layouts; broad input/harness ablation with hardware/time/service-mode confounders"
+  ]
+}
