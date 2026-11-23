@@ -1,8 +1,10 @@
 """Cross-host transport preserves publication order, bytes, identity and deadlines."""
 import base64
+import contextlib
 import hashlib
 import importlib.util
 import json
+import io
 from pathlib import Path
 import sys
 import subprocess
@@ -14,10 +16,46 @@ from unittest.mock import patch
 TOOLS = Path(__file__).resolve().parents[1]/'policy/Q0_Preview/tools'
 sys.path.insert(0, str(TOOLS))
 import bridge_exchange as bridge
+import remote_agent
 from remote_agent import import_observation, receive, SSHBridgeTransport, bridge_ssh_command
 
 
 class BridgeTests(unittest.TestCase):
+    def test_cli_transport_grace_reaches_live_transport_without_changing_agent_config(self):
+        for grace in (None, 600):
+            with self.subTest(grace=grace), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                cfg = dict(provider='codex_cli', api_key_env='OPENAI_API_KEY')
+                argv = ['remote_agent', '--ssh-config', '/unused', '--ssh-host', 'cluster',
+                        '--remote-root', '/remote', '--remote-code', '/bridge.py',
+                        '--root', str(root), '--config', '/unused.json']
+                if grace is not None:
+                    argv += ['--ssh-recovery-window-s', str(grace)]
+                with patch.object(sys, 'argv', argv), \
+                        patch.object(remote_agent, 'config', return_value=cfg), \
+                        patch.object(remote_agent, 'create_run_directory', return_value=root), \
+                        patch.object(remote_agent.signal, 'signal'), \
+                        patch.object(remote_agent, 'SSHBridgeTransport') as factory:
+                    factory.return_value.exchange.return_value = dict(
+                        protocol=1, server_unix=time.time(), episodes={}, replies=[], service_stopped=True)
+                    remote_agent.main()
+                    self.assertEqual(factory.call_args.kwargs['recovery_window_s'], grace or 60)
+                    factory.return_value.close.assert_called_once()
+                self.assertEqual(cfg, dict(provider='codex_cli', api_key_env='OPENAI_API_KEY'))
+
+    def test_cli_rejects_unbounded_transport_grace_before_loading_agent(self):
+        for value in ('0', '-1', '901', 'nan'):
+            argv = ['remote_agent', '--ssh-config', '/unused', '--ssh-host', 'cluster',
+                    '--remote-root', '/remote', '--remote-code', '/bridge.py',
+                    '--root', '/unused', '--config', '/unused.json',
+                    '--ssh-recovery-window-s', value]
+            with self.subTest(value=value), patch.object(sys, 'argv', argv), \
+                    patch.object(remote_agent, 'config') as config_loader, \
+                    contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                remote_agent.main()
+            self.assertEqual(error.exception.code, 2)
+            config_loader.assert_not_called()
+
     def test_observation_transport_never_uses_the_management_master(self):
         command = bridge_ssh_command('/private/config', 'cluster', 'python bridge.py')
         for option in ('ControlMaster=no','ControlPath=none','ControlPersist=no',

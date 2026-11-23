@@ -21,6 +21,8 @@ def main():
     p.add_argument('--ssh-config', required=True)
     p.add_argument('--ssh-host', default='q0-cluster')
     p.add_argument('--job-id', required=True)
+    p.add_argument('--ssh-recovery-window-s', type=int, default=60,
+                   help='Japan-side transport recovery grace, 1..900 seconds')
     p.add_argument('--site-setup', required=True)
     p.add_argument('--cluster-prefix', required=True)
     p.add_argument('--python-prefix', required=True)
@@ -31,6 +33,8 @@ def main():
     p.add_argument('--resume-from', type=Path, help='Terminal transport-interrupted strict run; preserve its audited native prefix')
     p.add_argument('--storage-failure-proof', type=Path, help='Trusted storage error/partial-array/node-write certificate for this resume')
     args = p.parse_args()
+    if not 1 <= args.ssh_recovery_window_s <= 900:
+        p.error('SSH recovery window must be between 1 and 900 seconds')
     if not args.smoke and not (args.validated_smoke and args.validated_inputs):
         p.error('Formal run requires --validated-smoke and --validated-inputs')
     if args.smoke and args.resume_from:
@@ -140,7 +144,11 @@ def main():
         '--ssh-config', args.ssh_config, '--ssh-host', args.ssh_host,
         '--remote-root', args.remote_root+'/runs/'+root.name, '--remote-code', remote_policy+'/tools/bridge_exchange.py',
         '--root', str(root/'strict_official'), '--python-prefix', args.python_prefix,
-        '--config', str(policy/'config/agent.gpt62sol.strict.json')]
+        '--config', str(policy/'config/agent.gpt62sol.strict.json'),
+        '--ssh-recovery-window-s', str(args.ssh_recovery_window_s)]
+    (root/'bridge-transport-config.json').write_text(json.dumps(dict(
+        ssh_recovery_window_s=args.ssh_recovery_window_s,
+        scope='Japan-side SSH recovery only; episode deadlines and action budgets unchanged'), indent=2))
     if args.smoke:
         command += ['--smoke', '--two-group']
     bridge = None

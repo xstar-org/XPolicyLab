@@ -1,0 +1,112 @@
+{
+  "status": "terminal_transport_interruption_evidenced_transport_smoke_in_progress",
+  "verified_utc": "2026-11-23T09:47:41.970103+00:00",
+  "source_service": "strict-formal-005",
+  "job_id": "1854993",
+  "completed_retained": 49,
+  "successes_retained": 42,
+  "genuine_failed_layouts_retained": [
+    0,
+    6,
+    8,
+    36,
+    39,
+    43,
+    47
+  ],
+  "native_sha256": "d88000b1551934f6d61644d76e51367ca3d76167e25ac9add987f6c8e9888e0f",
+  "checkpoint_sha256": "3ed1b5bd76bbcbccb2d18f71c02509a76305d490a44f287f552a1a44a21b70d8",
+  "native_bytes_identical_before_after_stop": true,
+  "native_outcomes_removed": 0,
+  "interrupted_archive": "1eb8bb90de1b47d4a21a91c030f1b962",
+  "interrupted_episode_counted": false,
+  "pre_stop_remote_progress": {
+    "run_id": "1eb8bb90de1b47d4a21a91c030f1b962",
+    "task": "push_T",
+    "updated_unix": 1795426688.3694587,
+    "phase": "motion",
+    "control_steps_used": 178,
+    "control_steps_sent": 178,
+    "unacknowledged_actions": 0,
+    "control_step_limit": 600,
+    "control_steps_remaining": 422,
+    "control_time_remaining_s": 16.88,
+    "control_step_limit_source": "audited static task definition",
+    "sim_time_s": 7.12,
+    "control_dt_s": 0.04
+  },
+  "last_local_synced_steps": 170,
+  "terminal_worker": {
+    "returncode": 1,
+    "job_id": "1854993",
+    "started_unix": 1795425309.2517507,
+    "finished_unix": 1795426975.5168324
+  },
+  "terminal_bridge_error": {
+    "error": "TimeoutError('SSH transport recovery window exhausted')",
+    "unix": 1795426839.9561827
+  },
+  "terminal_driver_error": {
+    "error": "RuntimeError('Strict agent bridge exited unexpectedly')",
+    "unix": 1795426848.0441732
+  },
+  "raw_input_audit": {
+    "mode": "strict_official",
+    "asset_sha256": {
+      "assets/prompts/strict_prompt.md": "dea711acae3f6aeed615a796dd4ea4f9e8edfcb952bf839f9ad3e2506869432a",
+      "assets/prompts/checkpoint_prompt.md": "1ed9f6749571533ba21c88437ef76cbe48e67eb043313af6bab790653982ff59",
+      "assets/geometry/strict_geometry.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+      "assets/geometry/geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+      "harness/helpers/vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+      "harness/helpers/observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+    },
+    "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+    "episodes_checked": 1,
+    "observations_checked": 11,
+    "episodes": [
+      {
+        "session": "1eb8bb90de1b47d4a21a91c030f1b962",
+        "observations": 11,
+        "closed": false
+      }
+    ],
+    "input_checks_passed": true,
+    "runtime_verified": true,
+    "limitation": "Input-boundary audit; no claim about pretrained knowledge or official certification."
+  },
+  "infrastructure_archives_outside_native": 7,
+  "diagnostic": {
+    "ssh_wall_seconds": 18.664624409051612,
+    "remote_program_seconds": 0.03791521908715367,
+    "read_checks": [
+      {
+        "name": "EXTERNAL_AGENT.json",
+        "bytes": 56,
+        "seconds": 0.013391428161412477
+      },
+      {
+        "name": "READY.json",
+        "bytes": 207,
+        "seconds": 0.009284696076065302
+      },
+      {
+        "name": "PROGRESS.json",
+        "bytes": 429,
+        "seconds": 0.0007991150487214327
+      }
+    ],
+    "limitation": "A single timing probe does not establish the cause of every stall"
+  },
+  "transport": {
+    "default_recovery_s": 60,
+    "requested_remaining_workflow_recovery_s": 600,
+    "maximum_allowed_recovery_s": 900,
+    "scope": "Japan-side SSH recovery; model inputs and episode/action deadlines unchanged",
+    "smoke_passed": false,
+    "model_calls_in_smoke": 0
+  },
+  "regression_tests": {
+    "passed": 92,
+    "log_sha256": "bf65ea0eda0020bc84c005fac6b5cb6a1457e0e750f96db903858e502d01b6cd"
+  }
+}

@@ -106,7 +106,8 @@ class SSHBridgeTransport:
 
     def record(self, event, **fields):
         value = dict(event=event, unix=time.time(), connections=self.connections,
-                     successful_reconnects=self.reconnects, **fields)
+                     successful_reconnects=self.reconnects,
+                     recovery_window_s=self.recovery_window_s, **fields)
         with (self.root/'transport-reconnects.jsonl').open('a') as file:
             file.write(json.dumps(value)+'\n')
         atomic(self.root/'TRANSPORT_STATE.json', value)
@@ -254,7 +255,11 @@ def main():
     parser.add_argument('--python-prefix', default=sys.prefix)
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--two-group', action='store_true')
+    parser.add_argument('--ssh-recovery-window-s', type=int, default=60,
+                        help='Transport recovery grace, 1..900 seconds; episode deadlines still apply')
     args = parser.parse_args()
+    if not 1 <= args.ssh_recovery_window_s <= 900:
+        parser.error('SSH recovery window must be between 1 and 900 seconds')
     cfg = config(args.python_prefix, args.config)
     if not args.smoke and cfg['provider'] != 'codex_cli' and not os.environ.get(cfg['api_key_env']):
         parser.error('Missing API key in local Agent environment')
@@ -273,7 +278,8 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     with (root/'transport.stderr').open('w') as log:
-        transport = SSHBridgeTransport(ssh_command, ssh_env, log, root, args.remote_root)
+        transport = SSHBridgeTransport(ssh_command, ssh_env, log, root, args.remote_root,
+                                       recovery_window_s=args.ssh_recovery_window_s)
         try:
             while not (root/'STOP').exists():
                 replies = []

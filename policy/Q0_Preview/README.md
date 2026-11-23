@@ -144,3 +144,12 @@ Q0_Preview/
 Each service creates `runs/Q0_Preview/<run_uuid>/`, with per-episode `sessions/<episode_uuid>/` directories for observations, history, API requests/responses/SSE and tool artifacts. Partial or missing responses retain that status. Images are loaded locally and embedded in API requests. Relative output paths resolve against the checkout; explicit run directories must be new and writable. Evaluator scores and videos use the evaluator's own output settings.
 
 The optional `tools/evaluate_tasks.py` scheduler starts one `eval.sh` service per local GPU slot, orders tasks by control-step limit and launches each task once. Use `--help` and `--dry-run` to inspect a schedule. Layouts and scoring belong to the evaluator; multi-host orchestration and simulator asset/shader-cache allocation belong to the deployment layer.
+
+For the Japan-hosted agent and cluster-hosted controller, `tools/remote_agent.py`
+accepts `--ssh-recovery-window-s` (1–900 seconds, default 60). The strict experiment
+driver forwards the same option and records it in `bridge-transport-config.json`;
+transport events record the actual window. A longer window retains the live agent
+during a temporary SSH failure. Episode deadlines, action budgets, stale-reply
+rejection and protocol validation still apply. See the
+[strict experiment audit](experiments/push_t/STRICT_AUDIT_zh.md) for changes made
+during the reported run.
