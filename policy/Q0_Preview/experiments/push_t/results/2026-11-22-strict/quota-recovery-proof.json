@@ -1,0 +1,175 @@
+{
+  "status": "recovery_validated_remaining18_running_not_final_results",
+  "job_id": "1854993",
+  "node": "wqd10nba07g8",
+  "source_service": "strict-formal-003",
+  "target_service": "strict-formal-004",
+  "native_completed_prefix": 32,
+  "native_successes": 29,
+  "native_failed_layouts": [
+    0,
+    6,
+    8
+  ],
+  "native_outcomes_removed": 0,
+  "source_native_sha256": "20fcecefced77ffbf4e1dfb310d504a0c4563793aa7fe0ca4d299332aaf1812a",
+  "source_checkpoint_sha256": "32d6c6d7b4148da29f111bec9a4f68ae75833978801a6642e2beef966cbc6984",
+  "interrupted_sessions": [
+    "cd1014b4f53b41c089ac5201cc863dbf"
+  ],
+  "backup": {
+    "verified": true,
+    "files": 3381,
+    "raw_bytes": 3111754368,
+    "archive_bytes": 3118254080,
+    "archive_sha256": "bc234cd2eba065a209fc177a9edc6d8d260378adaa00f774cff64886a3258430",
+    "manifest_sha256": "1a6f67a4d533c1fe32289fbd6fba71075fef2f2b3458843dbbf56ebd9d48e817",
+    "verified_unix": 1795397479.6947634,
+    "scope": "All selected ended strict services only; legacy full archive continues independently"
+  },
+  "cache_release": {
+    "freed_files": 3381,
+    "freed_bytes": 3111754368,
+    "removed_only_verified_rgb_npy": true,
+    "unix": 1795397549.3522034
+  },
+  "cache_release_evidence_sha256": "89b2248dc542942923ac2dfea4f0eae7c85a3d57e21fda5993e5e5501986190f",
+  "preserved": [
+    "original JPEG images",
+    "observation JSON and manifests",
+    "all model requests and responses",
+    "all native results including failures",
+    "all interruption archives and logs",
+    "verified standalone recoverable cache archive on Japan VPS"
+  ],
+  "original_writer_probe": {
+    "returncode": 0,
+    "node": "wqd10nba07g8",
+    "checks": [
+      {
+        "round": 0,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 1,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 2,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 3,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 4,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 5,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 6,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 7,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 8,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 9,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 10,
+        "ok": true,
+        "bytes": 921728
+      },
+      {
+        "round": 11,
+        "ok": true,
+        "bytes": 921728
+      }
+    ],
+    "actual_observation_subtree_tested": true,
+    "writer": "original numpy.save",
+    "evidence_sha256": "e6b7a5df26e43f09e53c0035577ddabe4966b753154eee4bb0e59ad413330be5"
+  },
+  "original_controller_smoke": {
+    "model_calls": 0,
+    "scored": false,
+    "deployment": {
+      "benchmark_name": "benchmark",
+      "file_count": 380,
+      "sha256": "9cfebba7d6d84f457919547942a0c9e366ba8a4f732c2c12370637cc8cff936e"
+    },
+    "input_checks_passed": true,
+    "observations_checked": 6,
+    "end": {
+      "run_id": "cf3363af04954539a538acafde48a525",
+      "task": "push_T",
+      "reason": "integration_smoke_complete",
+      "final": true,
+      "control_steps": 599,
+      "control_steps_used": 599,
+      "control_steps_sent": 600,
+      "unacknowledged_actions": 1,
+      "control_step_limit": 600,
+      "control_steps_remaining": 1,
+      "control_time_remaining_s": 0.04,
+      "control_step_limit_source": "audited static task definition",
+      "sim_time_s": 23.96,
+      "control_dt_s": 0.04,
+      "groups_completed": 4,
+      "wall_seconds": 132.99492831900716,
+      "official_result": "not available to policy"
+    }
+  },
+  "real_input_preflight": {
+    "passed": true,
+    "model_calls": 0,
+    "raw_observation_checked": true,
+    "sandbox_assets_sha256": {
+      "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+      "geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+      "vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+      "observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+    },
+    "system_sha256": "f12127e74eb00d29fbd0f1539c604296a289201d34461f434fb507d95128864b",
+    "tools": [
+      "submit_trajectory",
+      "run_python",
+      "view_image",
+      "end_attempt"
+    ],
+    "model": "gpt-6.2-sol",
+    "reasoning": {
+      "effort": "xhigh"
+    },
+    "source_episode": "cf3363af04954539a538acafde48a525"
+  },
+  "policy_and_runtime_unchanged": true,
+  "diagnostic_writer_used_for_formal": false,
+  "remaining_required": [
+    "complete native layouts32-49",
+    "fresh full request audit of all50",
+    "remote native results and frozen-deployment verification",
+    "paired statistics and final report"
+  ]
+}
