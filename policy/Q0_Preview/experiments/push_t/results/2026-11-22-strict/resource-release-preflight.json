@@ -1,0 +1,32 @@
+{
+  "status": "armed_waiting_for_complete_native_fifty_not_released_yet",
+  "job_id": "1854993",
+  "latest_user_requirement": "Release owned allocation after simulation completes and native evidence is saved",
+  "guards": [
+    "50 unique typed native outcomes",
+    "Same-job simulation worker returncode0",
+    "50 closed runtime input-audited archives",
+    "Saved cluster native bytes and frozen source/layout proof",
+    "Owned single4090 allocation identity rechecked in scancel process",
+    "Actual scheduler absence after cancellation; timeout is not success"
+  ],
+  "tests": {
+    "q0_suite": 90,
+    "passed": true,
+    "new_release_methods": 7,
+    "private_test_log_sha256": "2db22e78d2d26916242ffa08efb17f99c0376f68f319797ede2dc70c38b5424c"
+  },
+  "source_sha256": {
+    "policy/Q0_Preview/experiments/push_t/release_strict_allocation.py": "b26e4052335c47bd784e502254d5e16e98205a08fda37f3d767dafc020ee7028",
+    "tests/test_q0_allocation_release.py": "8d84a772d70a1a9c0a9848fff6c73758cd67c0ea9184ff954a9ab375f65c0369"
+  },
+  "read_only_live_identity_check": {
+    "verified": true,
+    "cancellation_requested": false,
+    "job_name": "q0-strict-info-50",
+    "partition": "gpu_4090",
+    "allocated_gpus": 1
+  },
+  "policy_runtime_or_input_changes": false,
+  "remaining_final_requirement": "Actual allocation-release-proof must show scheduler absence; this preflight is not proof of release"
+}
