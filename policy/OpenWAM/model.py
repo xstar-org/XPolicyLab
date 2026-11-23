@@ -417,14 +417,14 @@ class Model(ModelTemplate):
     def get_fixed_history_spec(self):
         if not self.fixed_history:
             raise ValueError("Fixed-history inference is disabled for this policy")
-        from openwam.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
+        from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
 
         return {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
 
     def infer_fixed_history_batch(self, observations):
         """Generate one isolated batch from an episode's flat frame records."""
         self.get_fixed_history_spec()
-        from openwam.fixed_history import history_frame_ids
+        from openwam.utils.fixed_history import history_frame_ids
 
         frames = {}
         current = {}
