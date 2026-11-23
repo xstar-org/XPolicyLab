@@ -1,0 +1,91 @@
+{
+  "status": "transport_interruption_recovered_formal_fifty_pending",
+  "source_service": "strict-formal-004",
+  "resumed_service": "strict-formal-005",
+  "job_id": "1854993",
+  "completed_inherited": 49,
+  "successes_inherited": 42,
+  "genuine_failed_layouts_retained": [
+    0,
+    6,
+    8,
+    36,
+    39,
+    43,
+    47
+  ],
+  "source_result_sha256": "d88000b1551934f6d61644d76e51367ca3d76167e25ac9add987f6c8e9888e0f",
+  "source_checkpoint_sha256": "6e8b98622ee9fd43a1afcfefc1782cf8b1026e54a46e6f1efec391621a3e2104",
+  "source_native_bytes_identical_before_after_stop": true,
+  "interrupted_episode_counted": false,
+  "native_result_tail_removed": false,
+  "interrupted_session": "bd18264d60674eb4b1ceebc5d24ca52c",
+  "pre_stop_remote_progress": {
+    "run_id": "bd18264d60674eb4b1ceebc5d24ca52c",
+    "task": "push_T",
+    "updated_unix": 1795424811.086502,
+    "phase": "motion",
+    "control_steps_used": 56,
+    "control_steps_sent": 56,
+    "unacknowledged_actions": 0,
+    "control_step_limit": 600,
+    "control_steps_remaining": 544,
+    "control_time_remaining_s": 21.76,
+    "control_step_limit_source": "audited static task definition",
+    "sim_time_s": 2.24,
+    "control_dt_s": 0.04
+  },
+  "local_last_synchronized_control_steps": 50,
+  "terminal_bridge_error": {
+    "error": "TimeoutError('SSH transport recovery window exhausted')",
+    "unix": 1795424911.0854826
+  },
+  "terminal_driver_error": {
+    "error": "RuntimeError('Strict agent bridge exited unexpectedly')",
+    "unix": 1795424920.62955
+  },
+  "terminal_worker": {
+    "returncode": 1,
+    "job_id": "1854993",
+    "started_unix": 1795397936.4985151,
+    "finished_unix": 1795425076.7144809
+  },
+  "interrupted_raw_input_audit": {
+    "mode": "strict_official",
+    "asset_sha256": {
+      "assets/prompts/strict_prompt.md": "dea711acae3f6aeed615a796dd4ea4f9e8edfcb952bf839f9ad3e2506869432a",
+      "assets/prompts/checkpoint_prompt.md": "1ed9f6749571533ba21c88437ef76cbe48e67eb043313af6bab790653982ff59",
+      "assets/geometry/strict_geometry.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+      "assets/geometry/geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+      "harness/helpers/vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+      "harness/helpers/observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+    },
+    "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+    "episodes_checked": 1,
+    "observations_checked": 3,
+    "episodes": [
+      {
+        "session": "bd18264d60674eb4b1ceebc5d24ca52c",
+        "observations": 3,
+        "closed": false
+      }
+    ],
+    "input_checks_passed": true,
+    "runtime_verified": true,
+    "limitation": "Input-boundary audit; no claim about pretrained knowledge or official certification."
+  },
+  "deployment": {
+    "benchmark_name": "benchmark",
+    "file_count": 380,
+    "sha256": "9cfebba7d6d84f457919547942a0c9e366ba8a4f732c2c12370637cc8cff936e"
+  },
+  "deployment_identical": true,
+  "layout_identical": true,
+  "input_material_hashes_identical": true,
+  "resume_inherited_closed_archives": 49,
+  "pre_stop_evidence_sha256": "d66e060384f09b3848612d75dfcda5469eab10e73bf4c4bcd41e0db144f54585",
+  "post_stop_evidence_sha256": "390c98922a68bccef59668ecbf289ce72d71cfb0d932de765c69b9ec567667bd",
+  "native_outcomes_removed": 0,
+  "q0_tests_passed": 90,
+  "resource_policy": "Release only the owned job1854993 after actual fifty valid native results and source evidence are saved; unfinished run not cancelled"
+}
