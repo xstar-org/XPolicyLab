@@ -1,0 +1,29 @@
+{
+  "status": "quota_diagnosed_repair_in_progress_not_final_results",
+  "native_valid_completed": 32,
+  "native_successes": 29,
+  "native_failed_layouts": [
+    0,
+    6,
+    8
+  ],
+  "native_result_sha256": "20fcecefced77ffbf4e1dfb310d504a0c4563793aa7fe0ca4d299332aaf1812a",
+  "interrupted_layout32_session": "cd1014b4f53b41c089ac5201cc863dbf",
+  "diagnostic_smoke": {
+    "scored": false,
+    "model_calls": 0,
+    "session": "d87e4c0337fa4216be0f479baf6f118c",
+    "error": "OSError: [Errno 122] Disk quota exceeded",
+    "server_log_sha256": "d0fe0fde93abf9a449373bb9f14a81e09f0976b884193e147f22ea4c6d9245b1",
+    "worker": {
+      "returncode": 1,
+      "job_id": "1854993",
+      "started_unix": 1795395372.2917392,
+      "finished_unix": 1795395544.5942185
+    }
+  },
+  "formal_runtime_change": false,
+  "diagnostic_writer_used_for_formal_episodes": false,
+  "quota_scope": "not_established",
+  "recovery_requirement": "Verified reversible cache archival, original np.save/load in actual observation subtree, original controller smoke, identical sandbox assets and prompt, unchanged native prefix; all final audits pending"
+}
