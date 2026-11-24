@@ -217,6 +217,7 @@ class Model(ModelTemplate):
 
         self.allow_dummy_policy = _is_true(self.model_cfg.get("allow_dummy_policy", False))
         self._engine = None
+        self._rollout_config = None
         self._wam_policy = None
         self._preprocessor = None
         if self.allow_dummy_policy:
@@ -249,6 +250,12 @@ class Model(ModelTemplate):
         server = build_server_from_config(deploy_cfg, ckpt_dir, device=device)
         server._init_policy()
         self._engine = server.engine
+        if getattr(self._engine.architecture, "fixed_history_prefix", False):
+            from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
+
+            self._rollout_config = {
+                "openwam_fixed_history": {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
+            }
         self._wam_policy = server._policy  # for the binary-dim legality projection
         self._preprocessor = server._obs_preprocessor
 
@@ -410,17 +417,8 @@ class Model(ModelTemplate):
         payloads = [self._batch[e] for e in env_idx_list]
         return self._generate_actions(payloads)
 
-    def get_fixed_history_spec(self):
-        if self._engine is None or not getattr(self._engine.architecture, "fixed_history_prefix", False):
-            return None
-        from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
-
-        return {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
-
     def infer_batch_from_cached_obs(self, observations):
         """Generate one isolated batch from an episode's flat frame records."""
-        if self.get_fixed_history_spec() is None:
-            raise ValueError("Fixed-history inference is disabled for this policy")
         from openwam.utils.fixed_history import history_frame_ids
 
         frames = {}
@@ -482,6 +480,4 @@ class Model(ModelTemplate):
     def reset(self):
         self._batch = {}
         self._order = []
-        spec = self.get_fixed_history_spec()
-        if spec is not None:
-            return {"openwam_fixed_history": spec}
+        return self._rollout_config
