@@ -432,13 +432,14 @@ class Model(ModelTemplate):
 
         payloads = []
         for slot, obs in current.items():
-            ordered_ids = history_frame_ids(int(obs["frame_idx"]))
+            current_idx = int(obs["frame_idx"])
+            ordered_ids = history_frame_ids(current_idx)
             payload = self._encode_obs(obs)
             if not self.allow_dummy_policy:
-                images = {
-                    idx: self._preprocessor.preprocess_images(self._encode_images(frames[slot, idx]))
-                    for idx in set(ordered_ids)
-                }
+                images = {current_idx: self._preprocessor.preprocess_images(payload["images"])}
+                for idx in set(ordered_ids) - {current_idx}:
+                    cameras = self._encode_images(frames[slot, idx])
+                    images[idx] = self._preprocessor.preprocess_images(cameras)
                 payload["history_clip_frames"] = [images[idx] for idx in ordered_ids]
             payloads.append(payload)
         return self._generate_actions(payloads)
