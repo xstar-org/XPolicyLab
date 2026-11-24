@@ -79,13 +79,15 @@ class ObsCache:
 
     def request(self, step, observations):
         self.record(step, observations)
-        wanted = {0, *(max(0, step - offset * self.stride) for offset in self.offsets)}
+        ordered_ids = [0, *(max(0, step - offset * self.stride) for offset in self.offsets)]
+        past_ids = dict.fromkeys(ordered_ids)
+        del past_ids[step]
         # The wire decoder accepts a flat list of observations. Each image is
         # sent once even when the clip repeats the first frame near the reset.
         payload = []
         for obs in observations:
             env_idx = int(obs["env_idx"])
-            for frame in sorted(wanted - {step}):
+            for frame in past_ids:
                 payload.append({
                     "env_idx": env_idx, "frame_idx": frame, "vision": self.frames[(env_idx, frame)],
                 })
@@ -93,6 +95,7 @@ class ObsCache:
             payload.append({
                 **current, "env_idx": env_idx, "frame_idx": step,
                 "vision": self.frames[(env_idx, step)], "history_current": True,
+                "history_frame_ids": ordered_ids,
             })
         active = {int(obs["env_idx"]) for obs in observations}
         oldest = step - max(self.offsets) * self.stride

@@ -419,29 +419,20 @@ class Model(ModelTemplate):
 
     def infer_batch_from_cached_obs(self, observations):
         """Generate one isolated batch from an episode's flat frame records."""
-        from openwam.utils.fixed_history import history_frame_ids
-
-        frames = {}
-        current = {}
-        for obs in observations:
-            slot = int(obs["env_idx"])
-            frame_idx = int(obs["frame_idx"])
-            frames[slot, frame_idx] = obs
-            if obs.get("history_current"):
-                current[slot] = obs
-
         payloads = []
-        for slot, obs in current.items():
-            current_idx = int(obs["frame_idx"])
-            ordered_ids = history_frame_ids(current_idx)
-            payload = self._encode_obs(obs)
-            if not self.allow_dummy_policy:
-                images = {current_idx: self._preprocessor.preprocess_images(payload["images"])}
-                for idx in set(ordered_ids) - {current_idx}:
-                    cameras = self._encode_images(frames[slot, idx])
-                    images[idx] = self._preprocessor.preprocess_images(cameras)
-                payload["history_clip_frames"] = [images[idx] for idx in ordered_ids]
-            payloads.append(payload)
+        # Each environment's records end with its current observation and clip order.
+        images = {}
+        for obs in observations:
+            frame_idx = int(obs["frame_idx"])
+            if obs.get("history_current"):
+                payload = self._encode_obs(obs)
+                if not self.allow_dummy_policy:
+                    images[frame_idx] = self._preprocessor.preprocess_images(payload["images"])
+                    payload["history_clip_frames"] = [images[idx] for idx in obs["history_frame_ids"]]
+                payloads.append(payload)
+                images.clear()
+            elif not self.allow_dummy_policy:
+                images[frame_idx] = self._preprocessor.preprocess_images(self._encode_images(obs))
         return self._generate_actions(payloads)
 
     def _generate_actions(self, payloads):

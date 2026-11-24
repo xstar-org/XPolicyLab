@@ -101,9 +101,10 @@ class CadenceTests(unittest.TestCase):
                 current = [row for row in obs if row.get('history_current')]
                 for row in current:
                     env, step = row['env_idx'], row['frame_idx']
-                    expected = {0, *(max(0, step - 25 * offset) for offset in range(8))}
+                    expected = [0, *(max(0, step - 25 * offset) for offset in range(7, -1, -1))]
+                    assert row['history_frame_ids'] == expected
                     local = [item for item in obs if item['env_idx'] == env]
-                    assert {item['frame_idx'] for item in local} == expected
+                    assert [item['frame_idx'] for item in local] == list(dict.fromkeys(expected))
                     assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in local)
                 chunks = [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
                 return SimpleNamespace(payload={'result': chunks})
