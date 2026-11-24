@@ -12,34 +12,23 @@ class OpenWAMRolloutClient:
         if func_name == "reset":
             result = self._client.call(func_name=func_name)
             spec = result.get("openwam_fixed_history") if isinstance(result, dict) else None
-            self._fixed_history = FixedHistoryClient(spec) if spec is not None else None
+            self._fixed_history = FixedHistory(**spec) if spec is not None else None
+            self.step = 0
+            self.observations = {}
             return result
 
         if self._fixed_history is not None:
             if func_name in {"update_obs", "update_obs_batch"}:
-                return self._fixed_history.update_obs_batch(obs)
+                return self._update_obs_batch(obs)
             if func_name == "get_action":
-                chunks = self._fixed_history.get_actions(self._client)
+                chunks = self._get_actions()
                 return chunks[0] if len(chunks) else chunks
             if func_name == "get_action_batch":
-                return self._fixed_history.get_actions(self._client, obs)
+                return self._get_actions(obs)
 
         return self._client.call(func_name=func_name, obs=obs)
 
-    def after_action(self, read_observations):
-        if self._fixed_history is not None:
-            self._fixed_history.after_action(read_observations)
-
-
-class FixedHistoryClient:
-    """Collect local control-step observations before sending each inference request."""
-
-    def __init__(self, spec):
-        self.history = FixedHistory(**spec)
-        self.step = 0
-        self.observations = {}
-
-    def update_obs_batch(self, observations):
+    def _update_obs_batch(self, observations):
         if isinstance(observations, dict):
             observations = [observations]
         self.observations = {}
@@ -48,21 +37,23 @@ class FixedHistoryClient:
             self.observations[env_idx] = {**obs, "env_idx": env_idx}
 
     def after_action(self, read_observations):
+        if self._fixed_history is None:
+            return
         self.step += 1
-        if self.history.capture_between_replans(self.step):
+        if self._fixed_history.capture_between_replans(self.step):
             observations = read_observations()
             if isinstance(observations, dict):
                 observations = [observations]
-            self.history.record(self.step, observations)
+            self._fixed_history.record(self.step, observations)
 
-    def get_actions(self, model_client, env_ids=None):
+    def _get_actions(self, env_ids=None):
         observations = self.observations.values() if env_ids is None else (
             self.observations[int(env_idx)] for env_idx in env_ids
         )
-        payload = self.history.request(self.step, list(observations))
-        actions = model_client.call(func_name="infer_fixed_history_batch", obs=payload)
+        payload = self._fixed_history.request(self.step, list(observations))
+        actions = self._client.call(func_name="infer_fixed_history_batch", obs=payload)
         if len(actions) and len(actions[0]):
-            self.history.set_horizon(len(actions[0]))
+            self._fixed_history.set_horizon(len(actions[0]))
         return actions
 
 
