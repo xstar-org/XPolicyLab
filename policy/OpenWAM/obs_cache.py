@@ -36,11 +36,11 @@ class OpenWAMRolloutClient:
             env_idx = int(obs.get("env_idx", index))
             self.observations[env_idx] = {**obs, "env_idx": env_idx}
 
-    def after_action(self, read_observations):
+    def after_action(self, read_observations, *, chunk_size):
         if self._obs_cache is None:
             return
         self.step += 1
-        if self._obs_cache.capture_between_replans(self.step):
+        if self._obs_cache.capture_between_replans(self.step, chunk_size):
             observations = read_observations()
             if isinstance(observations, dict):
                 observations = [observations]
@@ -51,10 +51,7 @@ class OpenWAMRolloutClient:
             self.observations[int(env_idx)] for env_idx in env_ids
         )
         payload = self._obs_cache.request(self.step, list(observations))
-        actions = self._client.call(func_name="infer_batch_from_cached_obs", obs=payload)
-        if len(actions) and len(actions[0]):
-            self._obs_cache.set_horizon(len(actions[0]))
-        return actions
+        return self._client.call(func_name="infer_batch_from_cached_obs", obs=payload)
 
 
 class ObsCache:
@@ -65,20 +62,12 @@ class ObsCache:
             raise ValueError("Fixed history requires a positive stride and an episode anchor")
         self.stride = stride
         self.offsets = range(clip_frames - 2, -1, -1)
-        self.horizon = None
         self.frames = {}
 
-    def set_horizon(self, horizon):
-        if horizon <= 0 or (self.horizon is not None and self.horizon != horizon):
-            raise ValueError("Fixed-history rollout requires a constant positive action chunk length")
-        self.horizon = horizon
-
-    def capture_between_replans(self, step):
-        if self.horizon is None:
-            raise RuntimeError("The action chunk length is unknown")
-        if step % self.horizon == 0:
+    def capture_between_replans(self, step, chunk_size):
+        if step % chunk_size == 0:
             return False
-        return any((step + offset * self.stride) % self.horizon == 0 for offset in self.offsets)
+        return any((step + offset * self.stride) % chunk_size == 0 for offset in self.offsets)
 
     def record(self, step, observations):
         for obs in observations:

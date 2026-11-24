@@ -15,7 +15,7 @@ def eval_one_episode(TASK_ENV, model_client):
             TASK_ENV.take_action(action)
             if TASK_ENV.is_episode_end():
                 break
-            model_client.after_action(TASK_ENV.get_obs)
+            model_client.after_action(TASK_ENV.get_obs, chunk_size=len(actions))
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):
@@ -39,4 +39,4 @@ def eval_one_episode_batch(TASK_ENV, model_client):
             active = [i for i, env_idx in enumerate(env_idx_list) if env_idx in running]
             actions = [actions[i] for i in active]
             env_idx_list = [env_idx_list[i] for i in active]
-            model_client.after_action(lambda: TASK_ENV.get_obs_batch(env_idx_list))
+            model_client.after_action(lambda: TASK_ENV.get_obs_batch(env_idx_list), chunk_size=chunk_size)
