@@ -331,17 +331,18 @@ class Model(ModelTemplate):
             "state": eef20.astype(np.float32).tolist(),
         }
         if past_observations is not None:
+            payload = self._preprocessor.preprocess(payload)
             clip_images = {
                 int(past["frame_idx"]): self._preprocessor.preprocess_images(self._encode_images(past))
                 for past in past_observations
             }
-            clip_images[int(obs["frame_idx"])] = self._preprocessor.preprocess_images(images)
+            clip_images[int(obs["frame_idx"])] = payload["image"]
             payload["history_clip_frames"] = [clip_images[idx] for idx in obs["history_frame_ids"]]
         return payload
 
     def _conditions(self, payload: dict) -> dict:
         """OpenWAM server-equivalent preprocessing: compose multiview + wrap."""
-        obs = self._preprocessor.preprocess(dict(payload))
+        obs = payload if "image" in payload else self._preprocessor.preprocess(dict(payload))
         cond = {
             "observation": obs,
             "first_frame_image": [obs["image"]],
