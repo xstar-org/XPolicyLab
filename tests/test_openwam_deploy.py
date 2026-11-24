@@ -98,7 +98,7 @@ class CadenceTests(unittest.TestCase):
 
             async def call(self, func_name, obs, **kwargs):
                 assert func_name == 'infer_batch_from_cached_obs'
-                current = [row for row in obs if row.get('history_current')]
+                current = [row for row in obs if row.get('cur_obs')]
                 for row in current:
                     env, step = row['env_idx'], row['frame_idx']
                     expected = [0, *(max(0, step - 25 * offset) for offset in range(7, -1, -1))]

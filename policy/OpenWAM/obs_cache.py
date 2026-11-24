@@ -94,7 +94,7 @@ class ObsCache:
             current = {key: obs[key] for key in ("state", "instruction", "task_instruction") if key in obs}
             payload.append({
                 **current, "env_idx": env_idx, "frame_idx": step,
-                "vision": self.frames[(env_idx, step)], "history_current": True,
+                "vision": self.frames[(env_idx, step)], "cur_obs": True,
                 "history_frame_ids": ordered_ids,
             })
         active = {int(obs["env_idx"]) for obs in observations}

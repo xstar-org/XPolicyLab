@@ -424,7 +424,7 @@ class Model(ModelTemplate):
         images = {}
         for obs in observations:
             frame_idx = int(obs["frame_idx"])
-            if obs.get("history_current"):
+            if obs.get("cur_obs"):
                 payload = self._encode_obs(obs)
                 images[frame_idx] = self._preprocessor.preprocess_images(payload["images"])
                 payload["history_clip_frames"] = [images[idx] for idx in obs["history_frame_ids"]]
