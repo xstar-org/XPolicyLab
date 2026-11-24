@@ -51,7 +51,7 @@ class OpenWAMRolloutClient:
             self.observations[int(env_idx)] for env_idx in env_ids
         )
         payload = self._obs_cache.request(self.step, list(observations))
-        actions = self._client.call(func_name="infer_fixed_history_batch", obs=payload)
+        actions = self._client.call(func_name="infer_batch_from_cached_obs", obs=payload)
         if len(actions) and len(actions[0]):
             self._obs_cache.set_horizon(len(actions[0]))
         return actions

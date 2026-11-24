@@ -97,7 +97,7 @@ class CadenceTests(unittest.TestCase):
                 return SimpleNamespace(payload={'result': {'openwam_fixed_history': {'stride': 25, 'clip_frames': 9}}})
 
             async def call(self, func_name, obs, **kwargs):
-                assert func_name == 'infer_fixed_history_batch'
+                assert func_name == 'infer_batch_from_cached_obs'
                 current = [row for row in obs if row.get('history_current')]
                 for row in current:
                     env, step = row['env_idx'], row['frame_idx']

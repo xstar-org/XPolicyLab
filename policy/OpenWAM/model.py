@@ -417,7 +417,7 @@ class Model(ModelTemplate):
 
         return {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
 
-    def infer_fixed_history_batch(self, observations):
+    def infer_batch_from_cached_obs(self, observations):
         """Generate one isolated batch from an episode's flat frame records."""
         if self.get_fixed_history_spec() is None:
             raise ValueError("Fixed-history inference is disabled for this policy")
