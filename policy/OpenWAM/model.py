@@ -216,7 +216,6 @@ class Model(ModelTemplate):
         self._order: list[int] = []
 
         self.allow_dummy_policy = _is_true(self.model_cfg.get("allow_dummy_policy", False))
-        self.fixed_history = _is_true(self.model_cfg.get("fixed_history", False))
         self._engine = None
         self._wam_policy = None
         self._preprocessor = None
@@ -252,9 +251,6 @@ class Model(ModelTemplate):
         self._engine = server.engine
         self._wam_policy = server._policy  # for the binary-dim legality projection
         self._preprocessor = server._obs_preprocessor
-        model_uses_history = bool(getattr(self._engine.architecture, "fixed_history_prefix", False))
-        if self.fixed_history != model_uses_history:
-            raise ValueError("fixed_history must match the checkpoint's fixed_history_prefix setting")
 
         if self.replan_steps is None:
             horizon = OmegaConf.select(server.cfg, "inference.inference_horizon", default=None)
@@ -415,7 +411,7 @@ class Model(ModelTemplate):
         return self._generate_actions(payloads)
 
     def get_fixed_history_spec(self):
-        if not self.fixed_history:
+        if self._engine is None or not getattr(self._engine.architecture, "fixed_history_prefix", False):
             raise ValueError("Fixed-history inference is disabled for this policy")
         from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
 
