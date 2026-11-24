@@ -426,12 +426,11 @@ class Model(ModelTemplate):
             frame_idx = int(obs["frame_idx"])
             if obs.get("history_current"):
                 payload = self._encode_obs(obs)
-                if not self.allow_dummy_policy:
-                    images[frame_idx] = self._preprocessor.preprocess_images(payload["images"])
-                    payload["history_clip_frames"] = [images[idx] for idx in obs["history_frame_ids"]]
+                images[frame_idx] = self._preprocessor.preprocess_images(payload["images"])
+                payload["history_clip_frames"] = [images[idx] for idx in obs["history_frame_ids"]]
                 payloads.append(payload)
                 images.clear()
-            elif not self.allow_dummy_policy:
+            else:
                 images[frame_idx] = self._preprocessor.preprocess_images(self._encode_images(obs))
         return self._generate_actions(payloads)
 
