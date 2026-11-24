@@ -1,7 +1,10 @@
 """OpenWAM sync inference consumes only the observation at each replan."""
 
+from .obs_cache import OpenWAMRolloutClient
+
 
 def eval_one_episode(TASK_ENV, model_client):
+    model_client = OpenWAMRolloutClient(model_client)
     model_client.call(func_name="reset")
     while not TASK_ENV.is_episode_end():
         model_client.call(func_name="update_obs", obs=TASK_ENV.get_obs())
@@ -12,9 +15,11 @@ def eval_one_episode(TASK_ENV, model_client):
             TASK_ENV.take_action(action)
             if TASK_ENV.is_episode_end():
                 break
+            model_client.after_action(TASK_ENV.get_obs, chunk_size=len(actions))
 
 
 def eval_one_episode_batch(TASK_ENV, model_client):
+    model_client = OpenWAMRolloutClient(model_client)
     model_client.call(func_name="reset")
     while not TASK_ENV.is_episode_end():
         env_idx_list = TASK_ENV.get_running_env_idx_list()
@@ -34,3 +39,4 @@ def eval_one_episode_batch(TASK_ENV, model_client):
             active = [i for i, env_idx in enumerate(env_idx_list) if env_idx in running]
             actions = [actions[i] for i in active]
             env_idx_list = [env_idx_list[i] for i in active]
+            model_client.after_action(lambda: TASK_ENV.get_obs_batch(env_idx_list), chunk_size=chunk_size)

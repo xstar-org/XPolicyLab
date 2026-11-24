@@ -106,13 +106,18 @@ bash eval.sh RoboDojo stack_bowls New_OpenWAM_RoboDojo_SFT_60k arx_x5 ee 0 0 0 \
 
 ### Observation cadence
 
-The synchronous client captures and sends one fresh observation per environment
-at each replan boundary, then executes the returned chunk without intermediate
-observation RPCs. The model stores only the latest observation and has no
-observation history queue, so discarded intermediate updates do not condition
-inference. The executable chunk length (including `replan_steps`) determines
-the cadence; it is not hard-coded to four actions. Training `video_stride: 4`
-describes sampled training video frames, not the online replan interval.
-Rendering needed internally for simulation/video recording is unchanged.
-This applies to the current synchronous adapter, not an asynchronous/history
-policy. Episode termination is checked after each control action.
+By default, the synchronous client sends one fresh observation per environment
+at each replan boundary and executes the returned chunk before the next request.
+The executed chunk length, including any `replan_steps` limit, sets the
+replan interval. Training `video_stride: 4` sets the sampling interval for the
+training video.
+
+With a checkpoint that enables `fixed_history_prefix`, the server advertises
+the history spec when the rollout resets. Use `OPENWAM_ROOT` to select a
+backend with fixed-history batch inference. Each request also contains frame 0 and the eight
+observations at 25-action intervals ending at the current frame. The first
+frame fills any indices before episode start. Each rollout stores frames per
+environment and captures the intermediate steps required by the next replan.
+This mode requires a constant executed chunk length and the history-enabled
+OpenWAM checkpoint, including its matching frozen foundation assets.
+Both modes check episode termination after each control action.

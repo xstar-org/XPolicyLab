@@ -1,9 +1,18 @@
 """Exercise observation boundaries, chunk sizes and per-env early completion."""
 import importlib.util
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
-spec = importlib.util.spec_from_file_location('deploy', Path(__file__).resolve().parents[1] / 'policy/OpenWAM/deploy.py')
+from client_server.ws.model_client import WsModelClient
+
+policy = Path(__file__).resolve().parents[1] / 'policy/OpenWAM'
+package_spec = importlib.util.spec_from_file_location('test_openwam_policy', policy / '__init__.py')
+package = importlib.util.module_from_spec(package_spec)
+sys.modules[package_spec.name] = package
+package_spec.loader.exec_module(package)
+spec = importlib.util.spec_from_file_location('test_openwam_policy.deploy', policy / 'deploy.py')
 deploy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(deploy)
 
@@ -22,7 +31,10 @@ class Env:
 
     def get_obs_batch(self, ids):
         self.reads.append([(e, self.counts[e]) for e in ids])
-        return [dict(env_idx=e, step=self.counts[e]) for e in ids]
+        return [
+            dict(env_idx=e, step=self.counts[e], vision={'head': {'color': (e, self.counts[e])}})
+            for e in ids
+        ]
 
     def get_obs(self):
         return self.get_obs_batch([0])[0]
@@ -72,6 +84,44 @@ class CadenceTests(unittest.TestCase):
         for loop in (deploy.eval_one_episode, deploy.eval_one_episode_batch):
             with self.assertRaises(ValueError):
                 loop(Env({0: 3}), Client(0))
+
+    def test_batch_history_uses_exact_action_indices_after_one_env_retires(self):
+        class HistoryProtocol:
+            async def connect(self, **kwargs):
+                pass
+
+            async def close(self):
+                pass
+
+            async def reset(self, **kwargs):
+                return SimpleNamespace(payload={'result': {'openwam_fixed_history': {'stride': 25, 'clip_frames': 9}}})
+
+            async def call(self, func_name, obs, **kwargs):
+                assert func_name == 'infer_batch_from_cached_obs'
+                current = [group[-1] for group in obs]
+                for group, row in zip(obs, current):
+                    env, step = row['env_idx'], row['frame_idx']
+                    expected = [0, *(max(0, step - 25 * offset) for offset in range(7, -1, -1))]
+                    assert row['history_frame_ids'] == expected
+                    assert all(item['env_idx'] == env for item in group)
+                    assert [item['frame_idx'] for item in group] == list(dict.fromkeys(expected))
+                    assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in group)
+                chunks = [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
+                return SimpleNamespace(payload={'result': chunks})
+
+        for loop, ends in (
+            (deploy.eval_one_episode, {0: 307}),
+            (deploy.eval_one_episode_batch, {8: 77, 3: 307}),
+        ):
+            with self.subTest(entry_point=loop.__name__):
+                env = Env(ends)
+                with WsModelClient(url='ws://unused', evaluation_id='eval', trial_id='trial', client=HistoryProtocol()) as client:
+                    loop(env, client)
+                self.assertEqual(env.counts, env.ends)
+                self.assertIn([(e, 23) for e in ends], env.reads)
+                last_env = next(reversed(ends))
+                self.assertIn([(last_env, 288)], env.reads)
+                self.assertNotIn([(last_env, 24)], env.reads)
 
 
 if __name__ == '__main__':

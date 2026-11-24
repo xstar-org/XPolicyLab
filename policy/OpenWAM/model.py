@@ -217,6 +217,7 @@ class Model(ModelTemplate):
 
         self.allow_dummy_policy = _is_true(self.model_cfg.get("allow_dummy_policy", False))
         self._engine = None
+        self._rollout_config = None
         self._wam_policy = None
         self._preprocessor = None
         if self.allow_dummy_policy:
@@ -249,6 +250,12 @@ class Model(ModelTemplate):
         server = build_server_from_config(deploy_cfg, ckpt_dir, device=device)
         server._init_policy()
         self._engine = server.engine
+        if getattr(self._engine.architecture, "fixed_history_prefix", False):
+            from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
+
+            self._rollout_config = {
+                "openwam_fixed_history": {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
+            }
         self._wam_policy = server._policy  # for the binary-dim legality projection
         self._preprocessor = server._obs_preprocessor
 
@@ -296,7 +303,7 @@ class Model(ModelTemplate):
             raise RuntimeError(f"state conversion produced {eef20.shape}, expected ({_EEF20_DIM},)")
         return eef20
 
-    def _encode_obs(self, obs: Mapping) -> dict:
+    def _encode_images(self, obs: Mapping) -> dict:
         vision = obs.get("vision")
         if not isinstance(vision, Mapping):
             raise ValueError("obs['vision'] must be a mapping of camera name -> {'color': image}")
@@ -306,7 +313,10 @@ class Model(ModelTemplate):
             if not isinstance(camera, Mapping) or "color" not in camera:
                 raise KeyError(f"missing required camera vision/{camera_name}/color")
             images[payload_name] = _to_pil(camera["color"], ctx=f"vision/{camera_name}/color")
+        return images
 
+    def _encode_obs(self, obs: Mapping, *, past_observations=None) -> dict:
+        images = self._encode_images(obs)
         state = obs.get("state")
         if not isinstance(state, Mapping):
             raise ValueError("obs['state'] must be a mapping")
@@ -315,15 +325,24 @@ class Model(ModelTemplate):
         instruction = _decode_instruction(
             obs.get("instruction", obs.get("task_instruction")), self.default_instruction
         )
-        return {
+        payload = {
             "images": images,
             "prompt": self._format_prompt(instruction),
             "state": eef20.astype(np.float32).tolist(),
         }
+        if past_observations is not None:
+            payload = self._preprocessor.preprocess(payload)
+            clip_images = {
+                int(past["frame_idx"]): self._preprocessor.preprocess_images(self._encode_images(past))
+                for past in past_observations
+            }
+            clip_images[int(obs["frame_idx"])] = payload["image"]
+            payload["history_clip_frames"] = [clip_images[idx] for idx in obs["history_frame_ids"]]
+        return payload
 
     def _conditions(self, payload: dict) -> dict:
         """OpenWAM server-equivalent preprocessing: compose multiview + wrap."""
-        obs = self._preprocessor.preprocess(dict(payload))
+        obs = payload if "image" in payload else self._preprocessor.preprocess(dict(payload))
         cond = {
             "observation": obs,
             "first_frame_image": [obs["image"]],
@@ -331,6 +350,8 @@ class Model(ModelTemplate):
         }
         if obs.get("state") is not None:
             cond["proprio"] = obs["state"]
+        if "history_clip_frames" in obs:
+            cond["history_clip_frames"] = obs["history_clip_frames"]
         return cond
 
     # ------------------------------------------------------------------
@@ -403,7 +424,17 @@ class Model(ModelTemplate):
         if missing:
             raise ValueError(f"No stored observation for env_idx {missing}; call update_obs_batch first.")
         payloads = [self._batch[e] for e in env_idx_list]
+        return self._generate_actions(payloads)
 
+    def infer_batch_from_cached_obs(self, observations):
+        """Generate one action chunk per environment, with its current observation last."""
+        payloads = [
+            self._encode_obs(group[-1], past_observations=group[:-1])
+            for group in observations
+        ]
+        return self._generate_actions(payloads)
+
+    def _generate_actions(self, payloads):
         if self.allow_dummy_policy:
             return [self._hold_position_chunk(p) for p in payloads]
 
@@ -413,10 +444,10 @@ class Model(ModelTemplate):
         if hasattr(actions, "cpu"):
             actions = actions.detach().cpu().numpy()
         actions = np.asarray(actions)
-        if actions.ndim != 3 or actions.shape[0] != len(env_idx_list) or actions.shape[2] != _EEF20_DIM:
+        if actions.ndim != 3 or actions.shape[0] != len(payloads) or actions.shape[2] != _EEF20_DIM:
             raise RuntimeError(
                 f"generate_batch returned actions of shape {actions.shape}; "
-                f"expected (B={len(env_idx_list)}, T, {_EEF20_DIM})."
+                f"expected (B={len(payloads)}, T, {_EEF20_DIM})."
             )
         # Same final legality projection the OpenWAM server applies (no-op when
         # the checkpoint declares no binary command dims).
@@ -430,3 +461,4 @@ class Model(ModelTemplate):
     def reset(self):
         self._batch = {}
         self._order = []
+        return self._rollout_config
