@@ -1,31 +1,38 @@
 """Collect the RGB observations used by OpenWAM's fixed-history checkpoint."""
 
-import os
+class FixedHistoryClient:
+    """Collect local control-step observations before sending each inference request."""
 
+    def __init__(self, spec):
+        self.history = FixedHistory(**spec)
+        self.step = 0
+        self.observations = {}
 
-def configure_rollout(env, model_client):
-    """Return episode-local action and observation callbacks when history is enabled."""
-    cfg = getattr(env, "deploy_cfg", {})
-    value = os.environ.get("OPENWAM_FIXED_HISTORY", cfg.get("fixed_history", False))
-    if str(value).strip().lower() not in {"1", "true", "yes", "on"}:
-        return None
+    def update_obs_batch(self, observations):
+        if isinstance(observations, dict):
+            observations = [observations]
+        self.observations = {}
+        for index, obs in enumerate(observations):
+            env_idx = int(obs.get("env_idx", index))
+            self.observations[env_idx] = {**obs, "env_idx": env_idx}
 
-    history = FixedHistory(**model_client.call(func_name="get_fixed_history_spec"))
-    step = 0
+    def after_action(self, read_observations):
+        self.step += 1
+        if self.history.capture_between_replans(self.step):
+            observations = read_observations()
+            if isinstance(observations, dict):
+                observations = [observations]
+            self.history.record(self.step, observations)
 
-    def request_actions(observations):
-        actions = model_client.call(func_name="infer_fixed_history_batch", obs=history.request(step, observations))
+    def get_actions(self, call_model, env_ids=None):
+        observations = self.observations.values() if env_ids is None else (
+            self.observations[int(env_idx)] for env_idx in env_ids
+        )
+        payload = self.history.request(self.step, list(observations))
+        actions = call_model("infer_fixed_history_batch", payload)
         if len(actions) and len(actions[0]):
-            history.set_horizon(len(actions[0]))
+            self.history.set_horizon(len(actions[0]))
         return actions
-
-    def after_action(read_observations):
-        nonlocal step
-        step += 1
-        if history.capture_between_replans(step):
-            history.record(step, read_observations())
-
-    return request_actions, after_action
 
 
 class FixedHistory:

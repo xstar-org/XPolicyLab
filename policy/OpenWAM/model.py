@@ -412,14 +412,15 @@ class Model(ModelTemplate):
 
     def get_fixed_history_spec(self):
         if self._engine is None or not getattr(self._engine.architecture, "fixed_history_prefix", False):
-            raise ValueError("Fixed-history inference is disabled for this policy")
+            return None
         from openwam.utils.fixed_history import HISTORY_CLIP_FRAMES, HISTORY_STRIDE
 
         return {"stride": HISTORY_STRIDE, "clip_frames": HISTORY_CLIP_FRAMES}
 
     def infer_fixed_history_batch(self, observations):
         """Generate one isolated batch from an episode's flat frame records."""
-        self.get_fixed_history_spec()
+        if self.get_fixed_history_spec() is None:
+            raise ValueError("Fixed-history inference is disabled for this policy")
         from openwam.utils.fixed_history import history_frame_ids
 
         frames = {}
@@ -481,3 +482,6 @@ class Model(ModelTemplate):
     def reset(self):
         self._batch = {}
         self._order = []
+        spec = self.get_fixed_history_spec()
+        if spec is not None:
+            return {"openwam_fixed_history": spec}

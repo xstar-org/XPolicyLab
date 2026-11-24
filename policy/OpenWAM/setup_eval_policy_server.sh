@@ -97,5 +97,4 @@ exec env \
             openwam_root="${OPENWAM_ROOT}" \
             ckpt_dir="${ckpt_dir}" \
             openwam_deploy_config="${openwam_deploy_config}" \
-            fixed_history="${OPENWAM_FIXED_HISTORY:-false}" \
             allow_dummy_policy="${allow_dummy_policy}"

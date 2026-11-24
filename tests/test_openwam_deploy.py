@@ -2,7 +2,10 @@
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
+
+from client_server.ws.model_client import WsModelClient
 
 policy = Path(__file__).resolve().parents[1] / 'policy/OpenWAM'
 package_spec = importlib.util.spec_from_file_location('test_openwam_policy', policy / '__init__.py')
@@ -51,6 +54,9 @@ class Client:
         self.size = size
         self.latest = {}
 
+    def after_action(self, read_observations):
+        pass
+
     def call(self, func_name, obs=None):
         if func_name == 'reset':
             self.latest = {}
@@ -83,10 +89,17 @@ class CadenceTests(unittest.TestCase):
                 loop(Env({0: 3}), Client(0))
 
     def test_batch_history_uses_exact_action_indices_after_one_env_retires(self):
-        class HistoryClient:
-            def call(self, func_name, obs=None):
-                if func_name == 'get_fixed_history_spec':
-                    return {'stride': 25, 'clip_frames': 9}
+        class HistoryProtocol:
+            async def connect(self, **kwargs):
+                pass
+
+            async def close(self):
+                pass
+
+            async def reset(self, **kwargs):
+                return SimpleNamespace(payload={'result': {'openwam_fixed_history': {'stride': 25, 'clip_frames': 9}}})
+
+            async def call(self, func_name, obs, **kwargs):
                 assert func_name == 'infer_fixed_history_batch'
                 current = [row for row in obs if row.get('history_current')]
                 for row in current:
@@ -95,17 +108,22 @@ class CadenceTests(unittest.TestCase):
                     local = [item for item in obs if item['env_idx'] == env]
                     assert {item['frame_idx'] for item in local} == expected
                     assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in local)
-                return [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
+                chunks = [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
+                return SimpleNamespace(payload={'result': chunks})
 
-        for loop in (deploy.eval_one_episode, deploy.eval_one_episode_batch):
+        for loop, ends in (
+            (deploy.eval_one_episode, {0: 307}),
+            (deploy.eval_one_episode_batch, {8: 77, 3: 307}),
+        ):
             with self.subTest(entry_point=loop.__name__):
-                env = Env({8: 77, 3: 307})
-                env.deploy_cfg = {'fixed_history': True}
-                loop(env, HistoryClient())
+                env = Env(ends)
+                with WsModelClient(url='ws://unused', evaluation_id='eval', trial_id='trial', client=HistoryProtocol()) as client:
+                    loop(env, client)
                 self.assertEqual(env.counts, env.ends)
-                self.assertIn([(8, 23), (3, 23)], env.reads)
-                self.assertIn([(3, 288)], env.reads)
-                self.assertNotIn([(3, 24)], env.reads)
+                self.assertIn([(e, 23) for e in ends], env.reads)
+                last_env = next(reversed(ends))
+                self.assertIn([(last_env, 288)], env.reads)
+                self.assertNotIn([(last_env, 24)], env.reads)
 
 
 if __name__ == '__main__':

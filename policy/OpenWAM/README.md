@@ -101,7 +101,6 @@ bash eval.sh RoboDojo stack_bowls New_OpenWAM_RoboDojo_SFT_60k arx_x5 ee 0 0 0 \
 | `OPENWAM_FINETUNE_CKPT_PATH` | Warm-start directory for official `training.finetune_ckpt_path`. |
 | `OPENWAM_RESUME_CKPT_PATH` | Resume directory for official `training.resume_ckpt_path`. |
 | `OPENWAM_ALLOW_DUMMY_POLICY` | Debug-only: skip checkpoint load and return hold-position chunks. |
-| `OPENWAM_FIXED_HISTORY` | Set to `true` on both the server and client for a fixed-history checkpoint. Use `OPENWAM_ROOT` to select a backend with fixed-history batch inference. |
 
 `eval_batch: true` stacks every running env into one `engine.generate_batch` forward. `model.py` re-forces `dit_cache` / `compile` / `decode_video` off and `inference_mode=sync`. `device: cuda` loads Wan, UMT5-XXL, and ActionDiT on GPU, matching official OpenWAM deploy.
 
@@ -113,7 +112,9 @@ The executed chunk length, including any `replan_steps` limit, sets the
 replan interval. Training `video_stride: 4` sets the sampling interval for the
 training video.
 
-With `fixed_history` enabled, a request also contains frame 0 and the eight
+With a checkpoint that enables `fixed_history_prefix`, the server advertises
+the history spec when the rollout resets. Use `OPENWAM_ROOT` to select a
+backend with fixed-history batch inference. Each request also contains frame 0 and the eight
 observations at 25-action intervals ending at the current frame. The first
 frame fills any indices before episode start. Each rollout stores frames per
 environment and captures the intermediate steps required by the next replan.
