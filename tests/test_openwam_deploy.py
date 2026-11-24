@@ -97,13 +97,15 @@ class CadenceTests(unittest.TestCase):
                     assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in local)
                 return [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
 
-        env = Env({8: 77, 3: 307})
-        env.deploy_cfg = {'fixed_history': True}
-        deploy.eval_one_episode_batch(env, HistoryClient())
-        self.assertEqual(env.counts, env.ends)
-        self.assertIn([(8, 23), (3, 23)], env.reads)
-        self.assertIn([(3, 288)], env.reads)
-        self.assertNotIn([(3, 24)], env.reads)
+        for loop in (deploy.eval_one_episode, deploy.eval_one_episode_batch):
+            with self.subTest(entry_point=loop.__name__):
+                env = Env({8: 77, 3: 307})
+                env.deploy_cfg = {'fixed_history': True}
+                loop(env, HistoryClient())
+                self.assertEqual(env.counts, env.ends)
+                self.assertIn([(8, 23), (3, 23)], env.reads)
+                self.assertIn([(3, 288)], env.reads)
+                self.assertNotIn([(3, 24)], env.reads)
 
 
 if __name__ == '__main__':

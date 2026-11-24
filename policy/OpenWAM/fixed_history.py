@@ -1,5 +1,32 @@
 """Collect the RGB observations used by OpenWAM's fixed-history checkpoint."""
 
+import os
+
+
+def configure_rollout(env, model_client):
+    """Return episode-local action and observation callbacks when history is enabled."""
+    cfg = getattr(env, "deploy_cfg", {})
+    value = os.environ.get("OPENWAM_FIXED_HISTORY", cfg.get("fixed_history", False))
+    if str(value).strip().lower() not in {"1", "true", "yes", "on"}:
+        return None
+
+    history = FixedHistory(**model_client.call(func_name="get_fixed_history_spec"))
+    step = 0
+
+    def request_actions(observations):
+        actions = model_client.call(func_name="infer_fixed_history_batch", obs=history.request(step, observations))
+        if len(actions) and len(actions[0]):
+            history.set_horizon(len(actions[0]))
+        return actions
+
+    def after_action(read_observations):
+        nonlocal step
+        step += 1
+        if history.capture_between_replans(step):
+            history.record(step, read_observations())
+
+    return request_actions, after_action
+
 
 class FixedHistory:
     def __init__(self, stride, clip_frames):
