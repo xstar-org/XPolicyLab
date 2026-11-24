@@ -50,7 +50,6 @@ class WsModelClient:
         self.trial_id = trial_id
         self.repeat_index = repeat_index
         self._step = 0
-        self._fixed_history = None
         # None means "keep the PolicyEvalClientConfig default", so the defaults
         # stay defined in exactly one place.
         tuning = {
@@ -159,13 +158,7 @@ class WsModelClient:
                     repeat_index=self.repeat_index,
                 )
             )
-            result = response.payload.get("result")
-            self._fixed_history = None
-            if isinstance(result, dict) and "openwam_fixed_history" in result:
-                from XPolicyLab.policy.OpenWAM.fixed_history import FixedHistoryClient
-
-                self._fixed_history = FixedHistoryClient(result["openwam_fixed_history"])
-            return result
+            return response.payload.get("result")
 
         if func_name == "trial_end":
             response = self._run(
@@ -181,24 +174,6 @@ class WsModelClient:
         if not isinstance(func_name, str) or not func_name or func_name.startswith("_"):
             raise NotImplementedError(f"unsupported websocket model call: {func_name!r}")
 
-        if self._fixed_history is not None:
-            if func_name == "update_obs":
-                return self._fixed_history.update_obs_batch([obs])
-            if func_name == "update_obs_batch":
-                return self._fixed_history.update_obs_batch(obs)
-            if func_name == "get_action":
-                chunks = self._fixed_history.get_actions(self._call_model)
-                return chunks[0] if len(chunks) else chunks
-            if func_name == "get_action_batch":
-                return self._fixed_history.get_actions(self._call_model, obs)
-
-        return self._call_model(func_name, obs)
-
-    def after_action(self, read_observations) -> None:
-        if self._fixed_history is not None:
-            self._fixed_history.after_action(read_observations)
-
-    def _call_model(self, func_name: str, obs: Any) -> Any:
         # Generic model-method dispatch, matching the legacy TCP client which
         # forwarded any func_name. This covers update_obs/update_obs_batch
         # (obs / obs list), get_action (no obs), get_action_batch
@@ -214,7 +189,7 @@ class WsModelClient:
                 step=self._step,
             )
         )
-        if func_name in {"get_action", "get_action_batch", "infer_fixed_history_batch"}:
+        if func_name in {"get_action", "get_action_batch"}:
             self._step += 1
         return response.payload.get("result")
 

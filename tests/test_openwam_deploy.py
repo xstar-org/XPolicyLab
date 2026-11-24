@@ -54,9 +54,6 @@ class Client:
         self.size = size
         self.latest = {}
 
-    def after_action(self, read_observations):
-        pass
-
     def call(self, func_name, obs=None):
         if func_name == 'reset':
             self.latest = {}

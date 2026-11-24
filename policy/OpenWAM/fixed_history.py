@@ -1,5 +1,36 @@
 """Collect the RGB observations used by OpenWAM's fixed-history checkpoint."""
 
+
+class OpenWAMRolloutClient:
+    """Adapt standard rollout calls when the checkpoint advertises fixed history."""
+
+    def __init__(self, model_client):
+        self._client = model_client
+        self._fixed_history = None
+
+    def call(self, func_name, obs=None):
+        if func_name == "reset":
+            result = self._client.call(func_name=func_name)
+            spec = result.get("openwam_fixed_history") if isinstance(result, dict) else None
+            self._fixed_history = FixedHistoryClient(spec) if spec is not None else None
+            return result
+
+        if self._fixed_history is not None:
+            if func_name in {"update_obs", "update_obs_batch"}:
+                return self._fixed_history.update_obs_batch(obs)
+            if func_name == "get_action":
+                chunks = self._fixed_history.get_actions(self._client)
+                return chunks[0] if len(chunks) else chunks
+            if func_name == "get_action_batch":
+                return self._fixed_history.get_actions(self._client, obs)
+
+        return self._client.call(func_name=func_name, obs=obs)
+
+    def after_action(self, read_observations):
+        if self._fixed_history is not None:
+            self._fixed_history.after_action(read_observations)
+
+
 class FixedHistoryClient:
     """Collect local control-step observations before sending each inference request."""
 
@@ -24,12 +55,12 @@ class FixedHistoryClient:
                 observations = [observations]
             self.history.record(self.step, observations)
 
-    def get_actions(self, call_model, env_ids=None):
+    def get_actions(self, model_client, env_ids=None):
         observations = self.observations.values() if env_ids is None else (
             self.observations[int(env_idx)] for env_idx in env_ids
         )
         payload = self.history.request(self.step, list(observations))
-        actions = call_model("infer_fixed_history_batch", payload)
+        actions = model_client.call(func_name="infer_fixed_history_batch", obs=payload)
         if len(actions) and len(actions[0]):
             self.history.set_horizon(len(actions[0]))
         return actions
