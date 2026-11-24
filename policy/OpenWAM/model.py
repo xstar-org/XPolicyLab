@@ -315,7 +315,7 @@ class Model(ModelTemplate):
             images[payload_name] = _to_pil(camera["color"], ctx=f"vision/{camera_name}/color")
         return images
 
-    def _encode_obs(self, obs: Mapping) -> dict:
+    def _encode_obs(self, obs: Mapping, *, past_observations=None) -> dict:
         images = self._encode_images(obs)
         state = obs.get("state")
         if not isinstance(state, Mapping):
@@ -325,11 +325,19 @@ class Model(ModelTemplate):
         instruction = _decode_instruction(
             obs.get("instruction", obs.get("task_instruction")), self.default_instruction
         )
-        return {
+        payload = {
             "images": images,
             "prompt": self._format_prompt(instruction),
             "state": eef20.astype(np.float32).tolist(),
         }
+        if past_observations is not None:
+            clip_images = {
+                int(past["frame_idx"]): self._preprocessor.preprocess_images(self._encode_images(past))
+                for past in past_observations
+            }
+            clip_images[int(obs["frame_idx"])] = self._preprocessor.preprocess_images(images)
+            payload["history_clip_frames"] = [clip_images[idx] for idx in obs["history_frame_ids"]]
+        return payload
 
     def _conditions(self, payload: dict) -> dict:
         """OpenWAM server-equivalent preprocessing: compose multiview + wrap."""
@@ -421,17 +429,13 @@ class Model(ModelTemplate):
         """Generate one isolated batch from an episode's flat frame records."""
         payloads = []
         # Each environment's records end with its current observation and clip order.
-        images = {}
+        past_observations = []
         for obs in observations:
-            frame_idx = int(obs["frame_idx"])
             if obs.get("cur_obs"):
-                payload = self._encode_obs(obs)
-                images[frame_idx] = self._preprocessor.preprocess_images(payload["images"])
-                payload["history_clip_frames"] = [images[idx] for idx in obs["history_frame_ids"]]
-                payloads.append(payload)
-                images.clear()
+                payloads.append(self._encode_obs(obs, past_observations=past_observations))
+                past_observations.clear()
             else:
-                images[frame_idx] = self._preprocessor.preprocess_images(self._encode_images(obs))
+                past_observations.append(obs)
         return self._generate_actions(payloads)
 
     def _generate_actions(self, payloads):
