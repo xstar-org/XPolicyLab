@@ -1,4 +1,4 @@
-"""Collect the RGB observations used by OpenWAM's fixed-history checkpoint."""
+"""Cache RGB observations for OpenWAM rollouts."""
 
 
 class OpenWAMRolloutClient:
@@ -6,18 +6,18 @@ class OpenWAMRolloutClient:
 
     def __init__(self, model_client):
         self._client = model_client
-        self._fixed_history = None
+        self._obs_cache = None
 
     def call(self, func_name, obs=None):
         if func_name == "reset":
             result = self._client.call(func_name=func_name)
             spec = result.get("openwam_fixed_history") if isinstance(result, dict) else None
-            self._fixed_history = FixedHistory(**spec) if spec is not None else None
+            self._obs_cache = ObsCache(**spec) if spec is not None else None
             self.step = 0
             self.observations = {}
             return result
 
-        if self._fixed_history is not None:
+        if self._obs_cache is not None:
             if func_name in {"update_obs", "update_obs_batch"}:
                 return self._update_obs_batch(obs)
             if func_name == "get_action":
@@ -37,27 +37,29 @@ class OpenWAMRolloutClient:
             self.observations[env_idx] = {**obs, "env_idx": env_idx}
 
     def after_action(self, read_observations):
-        if self._fixed_history is None:
+        if self._obs_cache is None:
             return
         self.step += 1
-        if self._fixed_history.capture_between_replans(self.step):
+        if self._obs_cache.capture_between_replans(self.step):
             observations = read_observations()
             if isinstance(observations, dict):
                 observations = [observations]
-            self._fixed_history.record(self.step, observations)
+            self._obs_cache.record(self.step, observations)
 
     def _get_actions(self, env_ids=None):
         observations = self.observations.values() if env_ids is None else (
             self.observations[int(env_idx)] for env_idx in env_ids
         )
-        payload = self._fixed_history.request(self.step, list(observations))
+        payload = self._obs_cache.request(self.step, list(observations))
         actions = self._client.call(func_name="infer_fixed_history_batch", obs=payload)
         if len(actions) and len(actions[0]):
-            self._fixed_history.set_horizon(len(actions[0]))
+            self._obs_cache.set_horizon(len(actions[0]))
         return actions
 
 
-class FixedHistory:
+class ObsCache:
+    """Store per-environment RGB observations at the steps needed for replanning."""
+
     def __init__(self, stride, clip_frames):
         if stride <= 0 or clip_frames < 2:
             raise ValueError("Fixed history requires a positive stride and an episode anchor")

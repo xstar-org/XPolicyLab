@@ -1,6 +1,6 @@
 """OpenWAM sync inference consumes only the observation at each replan."""
 
-from .fixed_history import OpenWAMRolloutClient
+from .obs_cache import OpenWAMRolloutClient
 
 
 def eval_one_episode(TASK_ENV, model_client):
