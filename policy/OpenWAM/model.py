@@ -426,16 +426,11 @@ class Model(ModelTemplate):
         return self._generate_actions(payloads)
 
     def infer_batch_from_cached_obs(self, observations):
-        """Generate one isolated batch from an episode's flat frame records."""
-        payloads = []
-        # Each environment's records end with its current observation and clip order.
-        past_observations = []
-        for obs in observations:
-            if obs.get("cur_obs"):
-                payloads.append(self._encode_obs(obs, past_observations=past_observations))
-                past_observations.clear()
-            else:
-                past_observations.append(obs)
+        """Generate one action chunk per environment, with its current observation last."""
+        payloads = [
+            self._encode_obs(group[-1], past_observations=group[:-1])
+            for group in observations
+        ]
         return self._generate_actions(payloads)
 
     def _generate_actions(self, payloads):

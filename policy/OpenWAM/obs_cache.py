@@ -82,21 +82,22 @@ class ObsCache:
         ordered_ids = [0, *(max(0, step - offset * self.stride) for offset in self.offsets)]
         past_ids = dict.fromkeys(ordered_ids)
         del past_ids[step]
-        # The wire decoder accepts a flat list of observations. Each image is
-        # sent once even when the clip repeats the first frame near the reset.
+        # Each group sends every image once, with the current observation last.
         payload = []
         for obs in observations:
             env_idx = int(obs["env_idx"])
+            group = []
             for frame in past_ids:
-                payload.append({
+                group.append({
                     "env_idx": env_idx, "frame_idx": frame, "vision": self.frames[(env_idx, frame)],
                 })
             current = {key: obs[key] for key in ("state", "instruction", "task_instruction") if key in obs}
-            payload.append({
+            group.append({
                 **current, "env_idx": env_idx, "frame_idx": step,
-                "vision": self.frames[(env_idx, step)], "cur_obs": True,
+                "vision": self.frames[(env_idx, step)],
                 "history_frame_ids": ordered_ids,
             })
+            payload.append(group)
         active = {int(obs["env_idx"]) for obs in observations}
         oldest = step - max(self.offsets) * self.stride
         self.frames = {

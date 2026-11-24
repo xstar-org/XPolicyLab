@@ -98,14 +98,14 @@ class CadenceTests(unittest.TestCase):
 
             async def call(self, func_name, obs, **kwargs):
                 assert func_name == 'infer_batch_from_cached_obs'
-                current = [row for row in obs if row.get('cur_obs')]
-                for row in current:
+                current = [group[-1] for group in obs]
+                for group, row in zip(obs, current):
                     env, step = row['env_idx'], row['frame_idx']
                     expected = [0, *(max(0, step - 25 * offset) for offset in range(7, -1, -1))]
                     assert row['history_frame_ids'] == expected
-                    local = [item for item in obs if item['env_idx'] == env]
-                    assert [item['frame_idx'] for item in local] == list(dict.fromkeys(expected))
-                    assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in local)
+                    assert all(item['env_idx'] == env for item in group)
+                    assert [item['frame_idx'] for item in group] == list(dict.fromkeys(expected))
+                    assert all(item['vision']['head']['color'] == (env, item['frame_idx']) for item in group)
                 chunks = [[(row['env_idx'], row['frame_idx'] + j) for j in range(48)] for row in current]
                 return SimpleNamespace(payload={'result': chunks})
 
