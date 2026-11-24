@@ -426,23 +426,13 @@ class Model(ModelTemplate):
         for obs in observations:
             slot = int(obs["env_idx"])
             frame_idx = int(obs["frame_idx"])
-            key = slot, frame_idx
-            if key in frames or frame_idx < 0:
-                raise ValueError(f"Invalid or duplicate history frame {key}")
-            frames[key] = obs
+            frames[slot, frame_idx] = obs
             if obs.get("history_current"):
-                if slot in current:
-                    raise ValueError(f"Multiple current frames for env {slot}")
                 current[slot] = obs
-        if not current:
-            raise ValueError("Fixed-history inference requires current observations")
 
         payloads = []
         for slot, obs in current.items():
             ordered_ids = history_frame_ids(int(obs["frame_idx"]))
-            missing = [idx for idx in set(ordered_ids) if (slot, idx) not in frames]
-            if missing:
-                raise ValueError(f"Missing fixed history frames for env {slot}: {sorted(missing)}")
             payload = self._encode_obs(obs)
             if not self.allow_dummy_policy:
                 images = {
