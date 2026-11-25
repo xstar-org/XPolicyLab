@@ -23,7 +23,8 @@ def array(value):
 
 
 class Backend:
-    def __init__(self, observation, max_control_steps):
+    def __init__(self, observation, max_control_steps, strict_information=False):
+        self.strict_information = strict_information
         if type(max_control_steps) is not int or max_control_steps <= 0:
             raise ValueError('An explicit positive task control-step limit is required')
         self.raw = observation
@@ -210,7 +211,7 @@ class Backend:
         for a in ARMS:
             self.joint_limits[a].validate(q[a])
             p,r = self.fk(a,q[a])
-            if min(p[2],(p+FINGERTIP_REACH_M*r[:,0])[2]) < TOOL_TABLE_GUARD_Z:
+            if not self.strict_information and min(p[2],(p+FINGERTIP_REACH_M*r[:,0])[2]) < TOOL_TABLE_GUARD_Z:
                 raise Replan(f'{a} tool would penetrate the table')
             gaps = (self._collision_ranges or {}).get(a,
                 self.collision_gap_range(self.cmd_g[a], self.held_width_mm[a]))
@@ -327,7 +328,8 @@ class LazyPlanner:
                 all_joints=list(b.joint_limits[self.arm].names), dt=b.control_dt,
                 yml_path=str(Path(__file__).with_name('calibration')/'curobo.yml'),
                 # CuRobo expects the top surface in the arm's base frame.
-                table_height=TABLE_SURFACE_Z-b.robots[self.arm].entity_origin_pose[2])
+                table_height=(None if b.strict_information else
+                              TABLE_SURFACE_Z-b.robots[self.arm].entity_origin_pose[2]))
             p,r = b.fk(self.arm,b.joints()[self.arm])
             reference = b.reference_fk(self.arm,b.joints()[self.arm])
             if np.linalg.norm(p-reference[0])>.0005 or angle(r,reference[1])>.002:

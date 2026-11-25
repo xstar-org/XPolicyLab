@@ -1,0 +1,13 @@
+{
+  "job_id": "1854993",
+  "released": true,
+  "allocation_absent_from_scheduler": true,
+  "after_complete_native_fifty": true,
+  "simulation_worker_returncode": 0,
+  "native_result_sha256": "984f5662660afeb7fd2e340939c83f7b8a7fca8c8e5a9ccbb2064375e8f4f97c",
+  "cancel_requested": true,
+  "verified_unix": 1795429242.505021,
+  "private_release_proof_sha256": "ce560edad66c43860c177fa836baf473841535f7711373e9e4e40c9263dbe4be",
+  "scope": "Only the owned single4090 allocation; no other jobs cancelled",
+  "data_deleted_by_release": false
+}

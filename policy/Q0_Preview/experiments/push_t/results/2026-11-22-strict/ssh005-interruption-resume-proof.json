@@ -1,0 +1,125 @@
+{
+  "status": "transport_interruption_recovered_formal_fifty_pending",
+  "source_service": "strict-formal-005",
+  "resumed_service": "strict-formal-006",
+  "job_id": "1854993",
+  "completed_inherited": 49,
+  "successes_inherited": 42,
+  "genuine_failed_layouts_retained": [
+    0,
+    6,
+    8,
+    36,
+    39,
+    43,
+    47
+  ],
+  "source_result_sha256": "d88000b1551934f6d61644d76e51367ca3d76167e25ac9add987f6c8e9888e0f",
+  "source_checkpoint_sha256": "3ed1b5bd76bbcbccb2d18f71c02509a76305d490a44f287f552a1a44a21b70d8",
+  "source_native_bytes_identical_before_after_stop": true,
+  "interrupted_episode_counted": false,
+  "native_result_tail_removed": false,
+  "interrupted_session": "1eb8bb90de1b47d4a21a91c030f1b962",
+  "pre_stop_remote_progress": {
+    "run_id": "1eb8bb90de1b47d4a21a91c030f1b962",
+    "task": "push_T",
+    "updated_unix": 1795426688.3694587,
+    "phase": "motion",
+    "control_steps_used": 178,
+    "control_steps_sent": 178,
+    "unacknowledged_actions": 0,
+    "control_step_limit": 600,
+    "control_steps_remaining": 422,
+    "control_time_remaining_s": 16.88,
+    "control_step_limit_source": "audited static task definition",
+    "sim_time_s": 7.12,
+    "control_dt_s": 0.04
+  },
+  "local_last_synchronized_control_steps": 170,
+  "terminal_bridge_error": {
+    "error": "TimeoutError('SSH transport recovery window exhausted')",
+    "unix": 1795426839.9561827
+  },
+  "terminal_driver_error": {
+    "error": "RuntimeError('Strict agent bridge exited unexpectedly')",
+    "unix": 1795426848.0441732
+  },
+  "terminal_worker": {
+    "returncode": 1,
+    "job_id": "1854993",
+    "started_unix": 1795425309.2517507,
+    "finished_unix": 1795426975.5168324
+  },
+  "interrupted_raw_input_audit": {
+    "mode": "strict_official",
+    "asset_sha256": {
+      "assets/prompts/strict_prompt.md": "dea711acae3f6aeed615a796dd4ea4f9e8edfcb952bf839f9ad3e2506869432a",
+      "assets/prompts/checkpoint_prompt.md": "1ed9f6749571533ba21c88437ef76cbe48e67eb043313af6bab790653982ff59",
+      "assets/geometry/strict_geometry.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+      "assets/geometry/geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+      "harness/helpers/vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+      "harness/helpers/observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+    },
+    "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+    "episodes_checked": 1,
+    "observations_checked": 11,
+    "episodes": [
+      {
+        "session": "1eb8bb90de1b47d4a21a91c030f1b962",
+        "observations": 11,
+        "closed": false
+      }
+    ],
+    "input_checks_passed": true,
+    "runtime_verified": true,
+    "limitation": "Input-boundary audit; no claim about pretrained knowledge or official certification."
+  },
+  "deployment": {
+    "benchmark_name": "benchmark",
+    "file_count": 380,
+    "sha256": "9cfebba7d6d84f457919547942a0c9e366ba8a4f732c2c12370637cc8cff936e"
+  },
+  "deployment_identical": true,
+  "layout_identical": true,
+  "input_material_hashes_identical": true,
+  "resume_inherited_closed_archives": 49,
+  "pre_stop_evidence_sha256": "ae4461f90b1a08807eebb8d5fcca97379e4aef3543c92000664eed657f215c56",
+  "post_stop_evidence_sha256": "5c172246301ab2096b7f071b2a5be1d60f28bb17ed5eca6115d28325bb7c31d7",
+  "native_outcomes_removed": 0,
+  "q0_tests_passed": 92,
+  "resource_policy": "Release only the owned job1854993 after actual fifty valid native results and source evidence are saved; unfinished run not cancelled",
+  "transport_recovery": {
+    "previous_default_s": 60,
+    "qualified_remaining_service_s": 600,
+    "no_model_smoke_passed": true,
+    "smoke_source": "strict-transport-smoke-006",
+    "japan_bridge_sha256": "32a7ce955407ea8c5f5ecdcf4fc39346a5f5d5c5281fde850f0995fec528960c",
+    "limitation": "Transport grace differs for the last valid service; episode/action budgets remain unchanged",
+    "smoke_end": {
+      "run_id": "a0429b6db2984db19f74229ea20055c7",
+      "task": "push_T",
+      "reason": "integration_smoke_complete",
+      "final": true,
+      "control_steps": 599,
+      "control_steps_used": 599,
+      "control_steps_sent": 600,
+      "unacknowledged_actions": 1,
+      "control_step_limit": 600,
+      "control_steps_remaining": 1,
+      "control_time_remaining_s": 0.04,
+      "control_step_limit_source": "audited static task definition",
+      "sim_time_s": 23.96,
+      "control_dt_s": 0.04,
+      "groups_completed": 4,
+      "wall_seconds": 260.8162781819701,
+      "official_result": "not available to policy"
+    },
+    "smoke_worker": {
+      "returncode": 0,
+      "job_id": "1854993",
+      "started_unix": 1795427254.0065992,
+      "finished_unix": 1795427664.175429
+    },
+    "smoke_checkpoints": 2
+  }
+}

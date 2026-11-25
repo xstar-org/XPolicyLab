@@ -83,6 +83,9 @@ class Episode:
         import numpy as np
         self.check_deadline()
         obs, vision = self.b.observation()
+        if self.information_mode == 'strict_official':
+            from .strict_information import strict_observation
+            obs = strict_observation(obs)
         if self.executor.last_feedback is not None:
             # Measured diagnostics only; never a possession or official-success verdict.
             obs['last_execution']=self.executor.last_feedback
@@ -99,6 +102,9 @@ class Episode:
         obs_id = f'obs_{self.counter:05d}'
         obs.update(observation_id=obs_id, run_id=self.run_id, task=self.task,
                    capture_unix_s=time.time(), observation_kind=kind)
+        if self.information_mode == 'strict_official':
+            from .strict_information import validate_published
+            validate_published(obs)
         self.counter += 1
         folder = self.root/'observations'/obs_id
         folder.mkdir(parents=True)

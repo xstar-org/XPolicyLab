@@ -1,0 +1,10 @@
+{
+  "verified_utc": "2026-11-22T14:54:26.159490+00:00",
+  "official_page": "https://robodojo-benchmark.com/leaderboard/detail-description",
+  "html_bundle": "https://robodojo-benchmark.com/assets/index-BtEYaAxa.js",
+  "detail_bundle": "https://robodojo-benchmark.com/assets/index-BEvHUcMe.js",
+  "detail_bundle_sha256": "38de1d9ed3d92c7be912e7418a2b3aa6ff93a35d3537348eff220a476270f4d7",
+  "official_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+  "matches_frozen_description": true,
+  "scope": "Exact string comparison against currently served official task description; no scoring appendix supplied in strict mode."
+}

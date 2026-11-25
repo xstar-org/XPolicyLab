@@ -1,0 +1,69 @@
+{
+  "status": "latest_full_audit_of_retained_prefix32_passed_not_final50",
+  "episodes_checked": 32,
+  "observations_checked": 1060,
+  "counts": {
+    "calls": 2315,
+    "planning_calls": 1958,
+    "checkpoint_calls": 357,
+    "images_verified": 69663,
+    "planning_contexts_reconstructed": 0,
+    "checkpoint_contexts_reconstructed": 357,
+    "planning_contexts_matched_to_episode_journal": 1958,
+    "recorded_cli_wrapper_files_verified": 2315,
+    "recorded_generic_wrapper_blocks_verified": 714
+  },
+  "private_full_report_sha256": "5ff5a41b037775e481b353e2e18ae0102414453807125e8c92fe10bb11effa3f",
+  "auditor_source_sha256": {
+    "audit_strict.py": "e887e7392a211f4afa874c7bd05ae4a90ecbbe0592a28e179a12c4f5c1b3ea42",
+    "audit_strict_requests.py": "3f0c567d717745287189f12c5921a5b8294664ffa454f7d8ef3b4c50685723ef"
+  },
+  "task_description_sha256": "99d1695de23e84b47c7d824752867c5fc2047c7636d21a0ade06ea6266981a3e",
+  "sandbox_assets_sha256": {
+    "geometry_reference.md": "76bfb977c122e8f10c69891840a1f7ff700e79571ae5a2398acb00c8edc30867",
+    "geometry_interfaces.md": "ffe59a6c08cdf6e30108c4a00ccce3bf1f478b772321688ed4390485430ea2df",
+    "vlm_geom.py": "abd79eab6cf18d119e631da245f7429e3e25cf448f369f1c75e1239a503dffc2",
+    "observation_io.py": "65b2e49490af798a7eb58a460eb9b67804201f630264f01c3d58ae2b8d093062"
+  },
+  "source_sessions": [
+    "039819758e4c434a8d3abe9cabcfa12c",
+    "0498c145816f42bf855c4b219dec5b2f",
+    "0f907db18c7f449f81c6a7412ccbab81",
+    "1ed9ec4ced854dc2a60bf9654fe80226",
+    "3414e670a2844be9945ca77c5fce00f0",
+    "4e84705eb4734164bd535c67dc1a05f5",
+    "51e5eeac701946e28e709d35e5430914",
+    "69196cd1bc5d460aa7a0485bc60fe811",
+    "6af7214eb2eb4ef191cdac305eaba2f4",
+    "737f548e112e4706abe982d6ea235b0f",
+    "75a8361450b84d50a319ba629d07d09d",
+    "7732ca4914784485bc680b5722f73853",
+    "7bb87812f33a48b58eb27988b23bb4c6",
+    "8a50f06b4d334e5eb568964d27c0dee3",
+    "8cd82da5861143f7bdb18af2e854169d",
+    "8f971c9d26764c61a38882972fb26b1b",
+    "a033ee0324034e2d916e64cb62499549",
+    "a28867cc748a48bb99b833e512614d25",
+    "a54d6472d37240389ee005d1de5dd37f",
+    "a9343baf9c834c6fbbc34fadbe47a0b6",
+    "adb8ee2b7a1e4e53ac868aaea92f4a5e",
+    "af8a4fc2240249b3a01f5d10f06d0150",
+    "ba4eb370a42d4bd284ca8c4c2ce4cd5b",
+    "c31b1562794a40e595809b0c65b63491",
+    "c3e5a8a23aee4d5eba369762c0e9868a",
+    "d6a72e50730a49cc90aafaafeac28c0f",
+    "dc3ce52f7d4943f7afa11303f9551f08",
+    "e1192db50e2a42b791636e187fb31557",
+    "e7a31fbdf0694c1d8662c273195cd3cf",
+    "f2de449d6c6c41afa7ea2c70f0e6bfa7",
+    "f42953a2ff78441fad65a9eed43bac8b",
+    "fd8c0ca782a3444398b1ca80c583b6cc"
+  ],
+  "scope": "Actual raw observations, staged asset bytes, model requests, image provenance, same-episode ordered journal, checkpoint reconstruction, model/auth/service-tier receipts, recorded CLI wrapper whitelist",
+  "limitations": [
+    "CLI transport does not record per-call rolling-window selection; planning journal ordering and provenance are checked without claiming full unrecorded selection reconstruction",
+    "Does not inspect provider-internal hidden prompts or guarantee absence of pretrained task knowledge",
+    "No official RoboDojo compliance certification",
+    "Fresh full audit of final50 still required"
+  ]
+}

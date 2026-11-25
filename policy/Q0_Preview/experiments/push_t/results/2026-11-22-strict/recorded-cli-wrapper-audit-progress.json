@@ -1,0 +1,15 @@
+{
+  "checked_utc": "2026-11-22T17:18:11.761092+00:00",
+  "counts": {
+    "files_checked": 537,
+    "empty_captures": 444,
+    "requested_instruction_blocks": 93,
+    "reviewed_generic_blocks": 186
+  },
+  "reviewed_generic_wrapper_sha256": {
+    "29dad5ed6993c5e717376e0a1c84d54ab60ee593510916ac6cee4295e803315d": "Generic read-only permissions, restricted network and approval never",
+    "7f45d7d6986a761101d46d185824ce65c321ca0f02cea7497fc46d60ffae417b": "Generic Default collaboration mode and request_user_input availability"
+  },
+  "unreviewed_blocks": 0,
+  "scope": "Recorded CLI wrapper captures in ongoing run only; not a claim about provider-internal hidden prompts or future calls"
+}

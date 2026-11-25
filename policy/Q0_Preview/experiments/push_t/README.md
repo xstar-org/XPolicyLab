@@ -14,6 +14,12 @@ arm's Standard/Fast transition, different execution phases, and the extension
 from the official default 25 cases to 50. These results do not establish
 equivalence or generalize beyond this task and seed.
 
+**Audit correction (2026-11-22):** the previous `official_only` arm retained
+`home_check` (0.15 m / 20 degrees), `near_home`, fixed table geometry and historical
+task probe notes. Its 90% result is not a fully cleaned information baseline.
+The separate `strict_official` arm removes those inputs; its protocol and audit
+status are documented in [STRICT_AUDIT_zh.md](STRICT_AUDIT_zh.md).
+
 ## Protocol
 
 - Standard `push_T`, `arx_x5`, joint control, evaluation seed 1, 50 episodes per arm.

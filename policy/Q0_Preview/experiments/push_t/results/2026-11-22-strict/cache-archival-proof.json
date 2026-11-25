@@ -1,0 +1,52 @@
+{
+  "status": "verified_reversible_cache_archival_complete",
+  "full_backup": {
+    "verified": true,
+    "files": 13650,
+    "raw_bytes": 12576979200,
+    "archive_bytes": 6611474345,
+    "archive_sha256": "7593036511ed2ad0db829b93baada67ea9c3c5e03d4bbec0006524db160d5515",
+    "manifest_sha256": "230cabcef34391678919c22178f188dad02c847f484fc2c368c08272b2740a99",
+    "verified_unix": 1795399696.6798446
+  },
+  "release_phases": [
+    {
+      "scope": "strict",
+      "release": {
+        "freed_files": 3381,
+        "freed_bytes": 3111754368,
+        "removed_only_verified_rgb_npy": true,
+        "unix": 1795397549.3522034
+      },
+      "evidence_sha256": "89b2248dc542942923ac2dfea4f0eae7c85a3d57e21fda5993e5e5501986190f",
+      "backup_archive_sha256": "bc234cd2eba065a209fc177a9edc6d8d260378adaa00f774cff64886a3258430",
+      "backup_manifest_sha256": "1a6f67a4d533c1fe32289fbd6fba71075fef2f2b3458843dbbf56ebd9d48e817"
+    },
+    {
+      "scope": "legacy",
+      "release": {
+        "freed_files": 10269,
+        "freed_bytes": 9465224832,
+        "removed_only_verified_rgb_npy": true,
+        "unix": 1795399942.9499068
+      },
+      "evidence_sha256": "fd806ebffff0a8cdab65cbe71e48905e291dac5e7fb0bf1bdcda998bc10a2e33",
+      "backup_archive_sha256": "7593036511ed2ad0db829b93baada67ea9c3c5e03d4bbec0006524db160d5515",
+      "backup_manifest_sha256": "0df0f7fd12f850ad3acec4075e52b41d9f485304007d22c4ecc2e49288460676"
+    }
+  ],
+  "source_selection": "Only regular owned camera RGB numpy cache files under ended terminal Q0 services, with exact allowlisted basenames and paths",
+  "before_release": "All requested archive members unique and size/SHA256 matched; source ownership, regular-file status, no symlink ancestry, terminal worker, size, mtime and SHA256 revalidated before any unlink",
+  "preserved": [
+    "Original JPEG images",
+    "Observation JSON and manifests",
+    "All model requests/responses",
+    "All native outcomes including genuine failures",
+    "All server/worker/interruption logs",
+    "Exact original bytes of truncated arrays within verified backups"
+  ],
+  "non_cache_files_removed": 0,
+  "active_service_cache_files_removed": 0,
+  "policy_runtime_prompt_model_or_budgets_changed": false,
+  "limitation": "This artifact records storage maintenance only; it is not a final50 evaluation result or official compliance certification"
+}

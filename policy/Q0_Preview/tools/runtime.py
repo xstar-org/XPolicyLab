@@ -61,8 +61,8 @@ def config(prefix=None, template=None):
         raise ValueError('Development calibration, API pooling and accounting are not supported.')
     cfg['api_key_env'] = cfg.get('api_key_env', 'Q0_PREVIEW_API_KEY')
     cfg['task_information_mode'] = os.environ.get('Q0_PREVIEW_TASK_INFORMATION_MODE') or cfg.get('task_information_mode', 'original')
-    if cfg['task_information_mode'] not in ('original', 'official_only'):
-        raise ValueError('task_information_mode must be original or official_only')
+    if cfg['task_information_mode'] not in ('original', 'official_only', 'strict_official'):
+        raise ValueError('task_information_mode must be original, official_only or strict_official')
     if not cfg['api_key_env'].isidentifier():
         raise ValueError('Invalid API credential environment variable name')
     if cfg.get('sandbox', 'docker') not in ('docker', 'bwrap', 'bwrap-sudo'):
