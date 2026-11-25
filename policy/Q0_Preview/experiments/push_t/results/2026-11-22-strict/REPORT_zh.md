@@ -64,7 +64,7 @@ CLI未记录每次滚动窗口选择，因此不能声称重建该选择；未�
 
 缓存先做可恢复备份并逐文件核对，再复核源文件并释放相应集群副本；13,650份相机数组共12,576,979,200字节，JPEG/观测JSON/请求/原生结果/日志保留，残缺数组字节也在备份中。实际观测目录原始np.save/load12轮、原实现无模型闭环与零模型调用输入预审均通过，才恢复剩余布局。诊断写入器未用于正式局；远端仿真/控制器冻结部署始终为原380文件哈希。
 
-中途原生前缀的原始字节也一并公开，文件名及SHA256见 [原生来源核验](native-source-verification.json)，可直接比较已保留的逐局结果。中断逐项清单见 [provenance.json](provenance.json)，原始证据见 [首次SSH恢复](ssh-interruption-resume-proof.json)、[最后一局首次SSH恢复](ssh004-interruption-resume-proof.json)、[重复SSH中断及恢复窗口核验](ssh005-interruption-resume-proof.json)、[存储异常](storage-interruption-resume-proof.json)、[配额诊断](quota-diagnosis-progress.json)、[原实现恢复](quota-recovery-proof.json)、[缓存归档](cache-archival-proof.json)。这些管理材料不提供给模型。
+当前目录只保留 [49局续跑前快照](retained-prefix49-native.json) 和 [最终50局结果](strict-native.json)，用于直接核对最后一次续跑。其余中间快照移出当前目录，原始字节仍保留在固定历史提交中；归档链接、文件名及原有SHA256见 [原生来源核验](native-source-verification.json)。此前已完成的逐前缀核验结论保留，早期恢复证据可通过归档复核。中断逐项清单见 [provenance.json](provenance.json)，原始证据见 [首次SSH恢复](ssh-interruption-resume-proof.json)、[最后一局首次SSH恢复](ssh004-interruption-resume-proof.json)、[重复SSH中断及恢复窗口核验](ssh005-interruption-resume-proof.json)、[存储异常](storage-interruption-resume-proof.json)、[配额诊断](quota-diagnosis-progress.json)、[原实现恢复](quota-recovery-proof.json)、[缓存归档](cache-archival-proof.json)。这些管理材料不提供给模型。
 
 ## 耗时与可复核文件
 

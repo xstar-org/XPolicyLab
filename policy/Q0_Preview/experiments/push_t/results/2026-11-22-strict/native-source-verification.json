@@ -509,6 +509,13 @@
   "source_native_prefix_sha256": "20fcecefced77ffbf4e1dfb310d504a0c4563793aa7fe0ca4d299332aaf1812a",
   "source_prefix_preserved": true,
   "retained_prefix_public_files": {
+    "49": "retained-prefix49-native.json"
+  },
+  "latest_transport_resume_prefix_count": 49,
+  "latest_transport_resume_prefix_sha256": "d88000b1551934f6d61644d76e51367ca3d76167e25ac9add987f6c8e9888e0f",
+  "latest_transport_resume_evidence": "ssh005-interruption-resume-proof.json",
+  "archived_prefix_base_url": "https://github.com/xstar-org/XPolicyLab/blob/5b0bbe322b8b0b16c9c05608a68e7fb0057a07e2/policy/Q0_Preview/experiments/push_t/results/2026-11-22-strict/",
+  "archived_prefix_files": {
     "32": "retained-prefix32-native.json",
     "37": "retained-prefix37-native.json",
     "38": "retained-prefix38-native.json",
@@ -521,10 +528,7 @@
     "45": "retained-prefix45-native.json",
     "46": "retained-prefix46-native.json",
     "47": "retained-prefix47-native.json",
-    "48": "retained-prefix48-native.json",
-    "49": "retained-prefix49-native.json"
+    "48": "retained-prefix48-native.json"
   },
-  "latest_transport_resume_prefix_count": 49,
-  "latest_transport_resume_prefix_sha256": "d88000b1551934f6d61644d76e51367ca3d76167e25ac9add987f6c8e9888e0f",
-  "latest_transport_resume_evidence": "ssh005-interruption-resume-proof.json"
+  "archived_prefix_note": "Intermediate snapshots are preserved at this immutable historical commit; their SHA256 values remain in source_native_prefix_sha256 and verified_native_progress_prefixes. The current tree retains only prefix49 and final50."
 }
